@@ -1,5 +1,14 @@
 const mysql = require("mysql2/promise")
+const fs = require("fs")
 require("dotenv").config()
+
+function getSslConfig() {
+  if (process.env.DB_SSL !== "true") return undefined
+  if (process.env.DB_CA_PATH) {
+    return { ca: fs.readFileSync(process.env.DB_CA_PATH, "utf8") }
+  }
+  return { rejectUnauthorized: false }
+}
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -10,7 +19,7 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 5),
   charset: "utf8mb4_unicode_ci",
-  ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: true } : undefined
+  ssl: getSslConfig()
 })
 
 module.exports = pool

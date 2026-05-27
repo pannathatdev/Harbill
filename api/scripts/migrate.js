@@ -3,6 +3,14 @@ const path = require("path")
 const mysql = require("mysql2/promise")
 require("dotenv").config()
 
+function getSslConfig() {
+  if (process.env.DB_SSL !== "true") return undefined
+  if (process.env.DB_CA_PATH) {
+    return { ca: fs.readFileSync(process.env.DB_CA_PATH, "utf8") }
+  }
+  return { rejectUnauthorized: false }
+}
+
 async function main() {
   const database = process.env.DB_NAME
   if (!database) throw new Error("DB_NAME is missing in api/.env")
@@ -12,7 +20,7 @@ async function main() {
     port: process.env.DB_PORT || 3306,
     user: process.env.DB_USER || "root",
     password: process.env.DB_PASSWORD || "",
-    ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: true } : undefined,
+    ssl: getSslConfig(),
     multipleStatements: true
   })
 
