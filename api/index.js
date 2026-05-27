@@ -16,17 +16,22 @@ const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173"
 const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || `${API_BASE_URL}/auth/google/callback`
 const isPlaceholder = value => !value || /^('|")?(GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|JWT_SECRET)('|")?$/.test(value)
 const googleAuthReady = !isPlaceholder(process.env.GOOGLE_CLIENT_ID) && !isPlaceholder(process.env.GOOGLE_CLIENT_SECRET)
+const SESSION_SECRET = !isPlaceholder(process.env.JWT_SECRET) ? process.env.JWT_SECRET : "local-development-secret"
 
 const app = express()
 app.use(cors({ origin: CLIENT_URL, credentials: true }))
 app.use(express.json())
-app.use(session({ secret: process.env.JWT_SECRET, resave: false, saveUninitialized: false }))
+app.use(session({ secret: SESSION_SECRET, resave: false, saveUninitialized: false }))
 app.use(passport.initialize())
 app.use(passport.session())
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }
+})
+
+app.get("/", (req, res) => {
+  res.json({ ok: true, service: "harbill-api" })
 })
 
 // ── GOOGLE OAUTH ──────────────────────────────────────────────
@@ -74,6 +79,19 @@ passport.deserializeUser(async (id, done) => {
 })
 
 app.get("/health", async (req, res) => {
+  const missing = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "JWT_SECRET"]
+    .filter(key => isPlaceholder(process.env[key]))
+
+  if (missing.length > 0) {
+    return res.status(500).json({
+      ok: false,
+      db: false,
+      error: `Missing environment variables: ${missing.join(", ")}`,
+      googleAuthReady,
+      googleCallbackUrl: GOOGLE_CALLBACK_URL
+    })
+  }
+
   try {
     await db.query("SELECT 1")
     res.json({ ok: true, db: true, googleAuthReady, googleCallbackUrl: GOOGLE_CALLBACK_URL })
