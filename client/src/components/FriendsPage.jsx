@@ -7,6 +7,69 @@ const BANKS = [
   "ทหารไทยธนชาต", "กรุงศรี", "ออมสิน", "ธ.ก.ส.", "พร้อมเพย์อย่างเดียว"
 ]
 
+function IconButton({ onClick, title, children, className = "" }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-gray-500 transition-all hover:bg-white/10 hover:text-white ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </svg>
+  )
+}
+
+function SaveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+      <path d="M17 21v-8H7v8" />
+      <path d="M7 3v5h8" />
+    </svg>
+  )
+}
+
+function EditIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v5" />
+      <path d="M14 11v5" />
+    </svg>
+  )
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  )
+}
+
 export default function FriendsPage() {
   const [friends, setFriends] = useState([])
   const [groups, setGroups] = useState([])
@@ -14,6 +77,9 @@ export default function FriendsPage() {
   const [view, setView] = useState("friends")
   const [friendInput, setFriendInput] = useState("")
   const [groupInput, setGroupInput] = useState("")
+  const [editingGroupId, setEditingGroupId] = useState(null)
+  const [editingGroupName, setEditingGroupName] = useState("")
+  const [newMemberInputs, setNewMemberInputs] = useState({})
   const [editPayment, setEditPayment] = useState(null)
   const [payForm, setPayForm] = useState({
     bank_name: "", account_number: "", promptpay: "", display_name: ""
@@ -58,8 +124,37 @@ export default function FriendsPage() {
     load()
   }
 
+  function startEditGroup(group) {
+    setEditingGroupId(group.id)
+    setEditingGroupName(group.name)
+  }
+
+  function cancelEditGroup() {
+    setEditingGroupId(null)
+    setEditingGroupName("")
+  }
+
+  async function saveGroupName() {
+    const name = editingGroupName.trim()
+    if (!name || !editingGroupId) return
+    await api.updateGroup(editingGroupId, name)
+    cancelEditGroup()
+    load()
+  }
+
   async function addMember(gid, name) {
     await api.addGroupMember(gid, name)
+    load()
+  }
+
+  async function addNewMemberToGroup(group) {
+    const name = (newMemberInputs[group.id] || "").trim()
+    if (!name) return
+
+    const existing = friends.find(f => f.name.trim().toLowerCase() === name.toLowerCase())
+    if (!existing) await api.addFriend(name)
+    await api.addGroupMember(group.id, existing?.name || name)
+    setNewMemberInputs(prev => ({ ...prev, [group.id]: "" }))
     load()
   }
 
@@ -161,12 +256,15 @@ export default function FriendsPage() {
                   <div className="flex gap-2 items-center">
                     <button
                       onClick={() => openPaymentEdit(f)}
-                      className="text-xs text-purple-400 hover:text-purple-300"
+                      title={paymentInfo[f.name] ? "แก้บัญชี" : "เพิ่มบัญชี"}
+                      aria-label={paymentInfo[f.name] ? "แก้บัญชี" : "เพิ่มบัญชี"}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10 text-purple-300 transition-all hover:bg-purple-600 hover:text-white"
                     >
-                      {paymentInfo[f.name] ? "แก้บัญชี" : "+ บัญชี"}
+                      {paymentInfo[f.name] ? <EditIcon /> : <PlusIcon />}
                     </button>
-                    <button onClick={() => deleteFriend(f.id)}
-                      className="text-xs text-gray-700 hover:text-red-400">ลบ</button>
+                    <IconButton onClick={() => deleteFriend(f.id)} title="ลบเพื่อน" className="hover:bg-red-600 hover:text-white">
+                      <TrashIcon />
+                    </IconButton>
                   </div>
                 </div>
 
@@ -209,19 +307,20 @@ export default function FriendsPage() {
 
                     <div className="flex gap-2 pt-1">
                       <button onClick={savePayment}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-lg text-sm font-medium">
-                        บันทึก
+                        title="บันทึก"
+                        aria-label="บันทึก"
+                        className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-lg text-sm font-medium">
+                        <SaveIcon />
+                        <span>บันทึก</span>
                       </button>
                       {paymentInfo[f.name] && (
-                        <button onClick={() => deletePayment(f.name)}
-                          className="px-3 bg-[#13131f] hover:bg-red-900 py-2 rounded-lg text-xs text-gray-500 hover:text-red-400">
-                          ลบ
-                        </button>
+                        <IconButton onClick={() => deletePayment(f.name)} title="ลบบัญชี" className="h-9 w-9 bg-[#13131f] hover:bg-red-600 hover:text-white">
+                          <TrashIcon />
+                        </IconButton>
                       )}
-                      <button onClick={() => setEditPayment(null)}
-                        className="px-3 bg-[#13131f] py-2 rounded-lg text-xs text-gray-600">
-                        ยกเลิก
-                      </button>
+                      <IconButton onClick={() => setEditPayment(null)} title="ยกเลิก" className="h-9 w-9 bg-[#13131f]">
+                        <CloseIcon />
+                      </IconButton>
                     </div>
                   </div>
                 )}
@@ -254,9 +353,44 @@ export default function FriendsPage() {
           {groups.map(group => (
             <div key={group.id} className="bg-[#1c1c2e] rounded-2xl p-4 space-y-3">
               <div className="flex justify-between items-center">
-                <p className="text-sm font-medium">{group.name}</p>
-                <button onClick={() => deleteGroup(group.id)}
-                  className="text-xs text-gray-700 hover:text-red-400">ลบกลุ่ม</button>
+                {editingGroupId === group.id ? (
+                  <div className="flex flex-1 items-center gap-2">
+                    <input
+                      className="min-w-0 flex-1 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
+                      value={editingGroupName}
+                      onChange={e => setEditingGroupName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") saveGroupName()
+                        if (e.key === "Escape") cancelEditGroup()
+                      }}
+                      autoFocus
+                    />
+                    <IconButton onClick={saveGroupName} title="บันทึกชื่อกลุ่ม" className="bg-emerald-600 text-white hover:bg-emerald-500">
+                      <SaveIcon />
+                    </IconButton>
+                    <IconButton onClick={cancelEditGroup} title="ยกเลิก">
+                      <CloseIcon />
+                    </IconButton>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => startEditGroup(group)}
+                      className="min-w-0 flex-1 text-left"
+                      title="แก้ไขชื่อกลุ่ม"
+                    >
+                      <p className="truncate text-sm font-medium text-white">{group.name}</p>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <IconButton onClick={() => startEditGroup(group)} title="แก้ไขชื่อกลุ่ม" className="hover:bg-purple-600 hover:text-white">
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton onClick={() => deleteGroup(group.id)} title="ลบกลุ่ม" className="hover:bg-red-600 hover:text-white">
+                        <TrashIcon />
+                      </IconButton>
+                    </div>
+                  </>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 {group.members.length === 0
@@ -265,21 +399,38 @@ export default function FriendsPage() {
                     <span key={name} className="flex items-center gap-1 bg-[#13131f] px-3 py-1 rounded-full text-xs">
                       {name}
                       <button onClick={() => removeMember(group.id, name)}
-                        className="text-gray-700 hover:text-red-400">✕</button>
+                        title="ลบสมาชิก"
+                        aria-label="ลบสมาชิก"
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-full text-gray-600 hover:bg-red-600 hover:text-white">
+                        <CloseIcon />
+                      </button>
                     </span>
                   ))
                 }
               </div>
-              <select
-                className="w-full bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none"
-                value=""
-                onChange={e => { if (e.target.value) addMember(group.id, e.target.value) }}
-              >
-                <option value="">+ เพิ่มสมาชิก...</option>
-                {friends.filter(f => !group.members.includes(f.name)).map(f => (
-                  <option key={f.id} value={f.name}>{f.name}</option>
-                ))}
-              </select>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <input
+                    list={`group-members-${group.id}`}
+                    className="w-full bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
+                    placeholder="พิมพ์ชื่อเพื่อนแล้วกดเพิ่ม..."
+                    value={newMemberInputs[group.id] || ""}
+                    onChange={e => setNewMemberInputs(prev => ({ ...prev, [group.id]: e.target.value }))}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") addNewMemberToGroup(group)
+                    }}
+                  />
+                  <datalist id={`group-members-${group.id}`}>
+                    {friends.filter(f => !group.members.includes(f.name)).map(f => (
+                      <option key={f.id} value={f.name} />
+                    ))}
+                  </datalist>
+                </div>
+                <button onClick={() => addNewMemberToGroup(group)}
+                  className="bg-emerald-600 hover:bg-emerald-500 px-4 rounded-xl text-sm font-medium">
+                  + เพิ่ม
+                </button>
+              </div>
             </div>
           ))}
         </div>

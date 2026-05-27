@@ -1,10 +1,49 @@
-const BASE = "http://localhost:3001"
+export const BASE = import.meta.env.VITE_API_URL || "http://localhost:3001"
+const CACHE_TTL = 5 * 60 * 1000
+const CACHE_PREFIX = "harbill:api:"
 
 function getToken() {
   return localStorage.getItem("token")
 }
 
+function cacheKey(path) {
+  return `${CACHE_PREFIX}${getToken() || "guest"}:${path}`
+}
+
+function readCache(path) {
+  try {
+    const raw = localStorage.getItem(cacheKey(path))
+    if (!raw) return null
+    const cached = JSON.parse(raw)
+    if (Date.now() - cached.savedAt > CACHE_TTL) return null
+    return cached.data
+  } catch {
+    return null
+  }
+}
+
+function writeCache(path, data) {
+  try {
+    localStorage.setItem(cacheKey(path), JSON.stringify({ savedAt: Date.now(), data }))
+  } catch {
+    // Ignore storage quota/private mode errors.
+  }
+}
+
+function clearApiCache() {
+  const prefix = `${CACHE_PREFIX}${getToken() || "guest"}:`
+  Object.keys(localStorage)
+    .filter(key => key.startsWith(prefix))
+    .forEach(key => localStorage.removeItem(key))
+}
+
 async function req(path, options = {}) {
+  const method = options.method || "GET"
+  if (method === "GET") {
+    const cached = readCache(path)
+    if (cached) return cached
+  }
+
   const res = await fetch(BASE + path, {
     ...options,
     headers: {
@@ -31,6 +70,9 @@ async function req(path, options = {}) {
     throw new Error(data?.error || `Request failed: ${res.status}`)
   }
 
+  if (method === "GET") writeCache(path, data)
+  if (method !== "GET") clearApiCache()
+
   return data
 }
 
@@ -51,7 +93,9 @@ export const api = {
   register: (email, password, name) => post("/auth/register", { email, password, name }),
   login: (email, password) => post("/auth/login", { email, password }),
   me: () => req("/auth/me"),
+  googleStatus: () => req("/auth/google/status"),
   googleLogin: () => { window.location.href = `${BASE}/auth/google` },
+  clearCache: clearApiCache,
 
   // Friends
   getFriends: () => req("/friends"),
@@ -61,6 +105,7 @@ export const api = {
   // Groups
   getGroups: () => req("/groups"),
   addGroup: (name) => post("/groups", { name }),
+  updateGroup: (id, name) => patch(`/groups/${id}`, { name }),
   deleteGroup: (id) => del(`/groups/${id}`),
   addGroupMember: (gid, friend_name) => post(`/groups/${gid}/members`, { friend_name }),
   removeGroupMember: (gid, name) => del(`/groups/${gid}/members/${name}`),
@@ -94,6 +139,9 @@ export const api = {
       method: "POST",
       headers: { "Authorization": `Bearer ${getToken()}` },
       body: form
-    }).then(r => r.json())
+    }).then(r => {
+      clearApiCache()
+      return r.json()
+    })
   }
 }

@@ -2,6 +2,23 @@ import { useState, useEffect } from "react"
 import { api } from "../api"
 import { PageHeader } from "./HelpTip"
 
+function EditIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+    )
+}
+
+function ChevronIcon({ open }) {
+    return (
+        <svg viewBox="0 0 24 24" className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m6 9 6 6 6-6" />
+        </svg>
+    )
+}
+
 export default function HistoryPage({ onEditRound }) {
     const [rounds, setRounds] = useState([])
     const [open, setOpen] = useState(null)
@@ -19,19 +36,19 @@ export default function HistoryPage({ onEditRound }) {
         })
         onEditRound(round)
     }
-<PageHeader
-  title="ประวัติ"
-  desc={
-    <ul style={{ margin: 0, paddingLeft: 18 }}>
-      <li>รอบที่ปิดแล้วทั้งหมดจะแสดงที่นี่</li>
-      <li>กดที่รอบเพื่อดูรายละเอียดและยอดแต่ละคน</li>
-      <li>กด <b>✏️ เปิดแก้ไขรอบนี้</b> ถ้าต้องการกลับไปแก้ไขรายการ</li>
-    </ul>
-  }
-/>
     return (
+        <>
+        <PageHeader
+          title="ประวัติ"
+          desc={
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              <li>รอบที่ปิดแล้วทั้งหมดจะแสดงที่นี่</li>
+              <li>กดที่รอบเพื่อดูรายละเอียดและยอดแต่ละคน</li>
+              <li>ใช้ปุ่มไอคอนแก้ไขเมื่ออยากกลับไปแก้รายการ</li>
+            </ul>
+          }
+        />
         <div className="space-y-4">
-            <h1 className="text-lg font-semibold">ประวัติ</h1>
             {rounds.length === 0
                 ? <div className="bg-[#1c1c2e] rounded-2xl p-8 text-center text-gray-700 text-sm">ยังไม่มีประวัติ</div>
                 : rounds.map(r => {
@@ -75,7 +92,9 @@ r.joiners.forEach(n => {
                                 </div>
                                 <div className="flex items-center gap-3">
                                     <span className="text-emerald-400 font-semibold">฿{total.toFixed(2)}</span>
-                                    <span className="text-gray-600 text-xs">{isOpen ? "▲" : "▼"}</span>
+                                    <span className="text-gray-600">
+                                        <ChevronIcon open={isOpen} />
+                                    </span>
                                 </div>
                             </div>
 
@@ -114,9 +133,12 @@ r.joiners.forEach(n => {
                                     {/* ปุ่มแก้ไข */}
                                     <button
                                         onClick={() => reopenRound(r)}
-                                        className="w-full bg-[#252540] hover:bg-[#2e2e50] py-2.5 rounded-xl text-sm text-gray-300 font-medium"
+                                        title="เปิดแก้ไขรอบนี้"
+                                        aria-label="เปิดแก้ไขรอบนี้"
+                                        className="w-full inline-flex items-center justify-center gap-2 bg-[#252540] hover:bg-[#2e2e50] py-2.5 rounded-xl text-sm text-gray-300 font-medium"
                                     >
-                                        ✏️ เปิดแก้ไขรอบนี้
+                                        <EditIcon />
+                                        <span>เปิดแก้ไขรอบนี้</span>
                                     </button>
                                 </div>
                             )}
@@ -125,5 +147,6 @@ r.joiners.forEach(n => {
                 })
             }
         </div>
+        </>
     )
 }

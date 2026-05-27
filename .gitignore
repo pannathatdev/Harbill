@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.env
+api/.env
+client/.env
+api/uploads/

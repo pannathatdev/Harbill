@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react"
 import { api } from "../api"
-import html2canvas from "html2canvas"
-import { useRef } from "react"
 import QRCode from "qrcode"
 
 const SUMMARY_TEMPLATES = [
@@ -10,6 +8,101 @@ const SUMMARY_TEMPLATES = [
     { id: "detail", label: "ละเอียด" },
     { id: "check", label: "ตรวจบิล" },
 ]
+
+function ShareIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <path d="M8.59 13.51 15.42 17.49" />
+            <path d="M15.41 6.51 8.59 10.49" />
+        </svg>
+    )
+}
+
+function CopyIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+    )
+}
+
+function SaveIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+            <path d="M17 21v-8H7v8" />
+            <path d="M7 3v5h8" />
+        </svg>
+    )
+}
+
+function ImageCopyIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="8" y="8" width="14" height="14" rx="2" />
+            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+            <circle cx="13.5" cy="13.5" r="1.5" />
+            <path d="m22 18-3-3-5 5" />
+        </svg>
+    )
+}
+
+function EditIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+    )
+}
+
+function PlusIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12h14" />
+            <path d="M12 5v14" />
+        </svg>
+    )
+}
+
+function CloseIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+        </svg>
+    )
+}
+
+function TrashIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 6h18" />
+            <path d="M8 6V4h8v2" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v5" />
+            <path d="M14 11v5" />
+        </svg>
+    )
+}
+
+function IconButton({ onClick, title, children, className = "" }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            title={title}
+            aria-label={title}
+            className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-[#1c1c2e] text-gray-400 transition-all hover:border-purple-500/60 hover:text-white ${className}`}
+        >
+            {children}
+        </button>
+    )
+}
 
 function tlv(id, value) {
     const text = String(value)
@@ -75,8 +168,11 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     const [showPromptpayForm, setShowPromptpayForm] = useState(false)
     const [summaryTemplate, setSummaryTemplate] = useState("pay")
     const [qrCodes, setQrCodes] = useState({})
-    const [copied, setCopied] = useState(false)
-    const summaryRef = useRef(null)
+    const [copiedText, setCopiedText] = useState(false)
+    const [copiedQr, setCopiedQr] = useState(false)
+    const [copiedPerson, setCopiedPerson] = useState("")
+    const [showQrCopyPanel, setShowQrCopyPanel] = useState(false)
+    const [qrCopyModalMessage, setQrCopyModalMessage] = useState("")
     const [paymentInfo, setPaymentInfo] = useState({})
 
     // เพิ่มเพื่อนใหม่ inline
@@ -115,28 +211,196 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
         setGroups(g)
     }
 
-    async function shareAsImage() {
-        if (!summaryRef.current) return
-        const canvas = await html2canvas(summaryRef.current, {
-            backgroundColor: "#13131f",
-            scale: 2,
-        })
-        const blob = await new Promise(r => canvas.toBlob(r, "image/png"))
+    function safeFileName(value) {
+        return String(value || "person")
+            .trim()
+            .replace(/[\\/:*?"<>|]+/g, "-")
+            .replace(/\s+/g, "-")
+    }
 
-        // ถ้า browser รองรับ Web Share API (มือถือ)
-        if (navigator.share && navigator.canShare({ files: [new File([blob], "summary.png", { type: "image/png" })] })) {
-            await navigator.share({
-                files: [new File([blob], "summary.png", { type: "image/png" })],
-                title: round.name,
-            })
+    function canvasToBlob(canvas) {
+        return new Promise((resolve, reject) => {
+            canvas.toBlob(blob => {
+                if (blob) resolve(blob)
+                else reject(new Error("Cannot create image"))
+            }, "image/png")
+        })
+    }
+
+    function loadImage(src) {
+        return new Promise((resolve, reject) => {
+            const image = new Image()
+            image.onload = () => resolve(image)
+            image.onerror = reject
+            image.src = src
+        })
+    }
+
+    function drawCenteredText(ctx, text, x, y, maxWidth, lineHeight) {
+        const words = String(text || "").split(" ")
+        const lines = []
+        let line = ""
+
+        words.forEach(word => {
+            const next = line ? `${line} ${word}` : word
+            if (ctx.measureText(next).width <= maxWidth || !line) {
+                line = next
+            } else {
+                lines.push(line)
+                line = word
+            }
+        })
+        if (line) lines.push(line)
+
+        lines.forEach((value, index) => {
+            ctx.fillText(value, x, y + index * lineHeight)
+        })
+
+        return y + Math.max(lines.length, 1) * lineHeight
+    }
+
+    async function buildPersonQrCanvas(name) {
+        if (!ownerPayment?.promptpay || !qrCodes[name]) return null
+
+        const amount = totals[name] || 0
+        const qrImage = await loadImage(qrCodes[name])
+        const canvas = document.createElement("canvas")
+        canvas.width = 720
+        canvas.height = 900
+        const ctx = canvas.getContext("2d")
+
+        ctx.fillStyle = "#ffffff"
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.fillStyle = "#101827"
+        ctx.textAlign = "center"
+        ctx.textBaseline = "top"
+
+        ctx.font = "700 44px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        drawCenteredText(ctx, name, canvas.width / 2, 56, 600, 54)
+
+        ctx.font = "700 72px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        ctx.fillStyle = "#6d28d9"
+        ctx.fillText(`฿${amount.toFixed(2)}`, canvas.width / 2, 145)
+
+        ctx.drawImage(qrImage, 160, 250, 400, 400)
+
+        ctx.fillStyle = "#111827"
+        ctx.font = "700 28px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        ctx.fillText(`พร้อมเพย์ ${ownerPayment.promptpay}`, canvas.width / 2, 700)
+
+        ctx.fillStyle = "#4b5563"
+        ctx.font = "500 24px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        ctx.fillText(`โอนเข้า ${ownerName}`, canvas.width / 2, 742)
+        ctx.fillText(round.name, canvas.width / 2, 790)
+
+        return canvas
+    }
+
+    async function buildPersonQrFile(name) {
+        const canvas = await buildPersonQrCanvas(name)
+        if (!canvas) return null
+        const blob = await canvasToBlob(canvas)
+        return new File([blob], `${safeFileName(round.name)}-${safeFileName(name)}-qr.png`, { type: "image/png" })
+    }
+
+    async function buildAllPersonQrFiles() {
+        const files = []
+        for (const name of selected) {
+            const file = await buildPersonQrFile(name)
+            if (file) files.push(file)
+        }
+        return files
+    }
+
+    async function copyQrFilesToClipboard(files) {
+        if (!navigator.clipboard?.write || !window.ClipboardItem) return false
+
+        await navigator.clipboard.write(
+            files.map(file => new ClipboardItem({ [file.type]: file }))
+        )
+        return true
+    }
+
+    async function shareFile(file, title) {
+        if (navigator.share && navigator.canShare?.({ files: [file] })) {
+            await navigator.share({ files: [file], title })
+            return
+        }
+        setShowQrCopyPanel(true)
+        alert("แชร์รูปไม่ได้ เปิดแผง QR ให้คัดลอกแทนครับ")
+    }
+
+    async function sharePersonImage(name) {
+        const file = await buildPersonQrFile(name)
+        if (!file) {
+            alert("ยังไม่มี QR ให้แชร์ กรุณาตั้งค่าพร้อมเพย์ก่อนครับ")
+            return
+        }
+        await shareFile(file, `${round.name} - ${name}`)
+    }
+
+    async function copyPersonImage(name) {
+        const file = await buildPersonQrFile(name)
+        if (!file) {
+            alert("ยังไม่มี QR ให้คัดลอก กรุณาตั้งค่าพร้อมเพย์ก่อนครับ")
+            return
+        }
+
+        if (!navigator.clipboard?.write || !window.ClipboardItem) {
+            setShowQrCopyPanel(true)
+            alert("เบราว์เซอร์นี้คัดลอกรูปไม่ได้ เปิดแผง QR ให้แทนครับ")
+            return
+        }
+
+        try {
+            await copyQrFilesToClipboard([file])
+            setCopiedQr(true)
+            setCopiedPerson(name)
+            setTimeout(() => {
+                setCopiedQr(false)
+                setCopiedPerson("")
+            }, 2500)
+        } catch (error) {
+            console.error(error)
+            setShowQrCopyPanel(true)
+            alert("คัดลอกรูปไม่ได้ เปิดแผง QR ให้แทนครับ")
+        }
+    }
+
+    async function shareAllPersonImages() {
+        const files = await buildAllPersonQrFiles()
+
+        if (files.length === 0) {
+            alert("ยังไม่มี QR ให้แชร์ กรุณาตั้งค่าพร้อมเพย์ก่อนครับ")
+            return
+        }
+
+        if (navigator.share && navigator.canShare?.({ files })) {
+            try {
+                await navigator.share({ files, title: round.name })
+            } catch (error) {
+                if (error?.name !== "AbortError") {
+                    console.error(error)
+                    const copiedImages = await copyQrFilesToClipboard(files).catch(() => false)
+                    if (copiedImages) {
+                        setCopiedQr(true)
+                        setTimeout(() => setCopiedQr(false), 2500)
+                        alert("แชร์ไม่สำเร็จ เลยคัดลอกรูป QR ทั้งหมดให้แล้วครับ ลองวางในแชทได้เลย")
+                    } else {
+                        setShowQrCopyPanel(true)
+                    }
+                }
+            }
+            return
+        }
+
+        const copiedImages = await copyQrFilesToClipboard(files).catch(() => false)
+        if (copiedImages) {
+            setCopiedQr(true)
+            setTimeout(() => setCopiedQr(false), 2500)
+            alert("คัดลอกรูป QR ทั้งหมดแล้ว ลองวางในแชทได้เลยครับ")
         } else {
-            // fallback — ดาวน์โหลดรูป
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement("a")
-            a.href = url
-            a.download = `${round.name}-summary.png`
-            a.click()
-            URL.revokeObjectURL(url)
+            setShowQrCopyPanel(true)
         }
     }
 
@@ -149,6 +413,30 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     function loadGroup(group) {
         const names = group.members.filter(n => !selected.includes(n))
         setSelected(prev => [...prev, ...names])
+    }
+
+    async function addNameToRoundSelection(name) {
+        const cleanName = String(name || "").trim()
+        if (!cleanName) return
+
+        const existingFriend = friends.find(f => f.name.trim().toLowerCase() === cleanName.toLowerCase())
+        const finalName = existingFriend?.name || cleanName
+
+        if (!existingFriend) {
+            try {
+                await api.addFriend(finalName)
+                await loadFriends()
+            } catch (err) {
+                if (!String(err.message || "").includes("ถูกใช้")) throw err
+            }
+        }
+
+        setSelected(prev => prev.includes(finalName) ? prev : [...prev, finalName])
+
+        if (round && !round.joiners?.includes(finalName)) {
+            await api.addRoundMember(round.id, finalName)
+            setRound(prev => ({ ...prev, joiners: [...(prev.joiners || []), finalName] }))
+        }
     }
 
     async function startRound() {
@@ -297,14 +585,7 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     async function addFriendInline() {
         const name = newFriendInput.trim()
         if (!name) return
-        await api.addFriend(name)
-        await loadFriends()
-        // เพิ่มเข้า selected และ round_members
-        setSelected(prev => [...prev, name])
-        if (round) {
-            await api.addRoundMember(round.id, name)
-            setRound(prev => ({ ...prev, joiners: [...prev.joiners, name] }))
-        }
+        await addNameToRoundSelection(name)
         setNewFriendInput("")
         setShowAddFriend(false)
     }
@@ -500,11 +781,67 @@ function buildSummaryText() {
         setStep("items")
     }
 
+    async function copyText(text) {
+        if (navigator.clipboard?.writeText && window.isSecureContext) {
+            await navigator.clipboard.writeText(text)
+            return true
+        }
+
+        const textarea = document.createElement("textarea")
+        textarea.value = text
+        textarea.setAttribute("readonly", "")
+        textarea.style.position = "fixed"
+        textarea.style.left = "-9999px"
+        textarea.style.top = "0"
+        document.body.appendChild(textarea)
+        textarea.focus()
+        textarea.select()
+
+        try {
+            return document.execCommand("copy")
+        } finally {
+            document.body.removeChild(textarea)
+        }
+    }
+
     async function copyToClipboard() {
-        const text = buildSummaryText()
-        await navigator.clipboard.writeText(text)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2500)
+        try {
+            const copiedText = await copyText(buildSummaryText())
+            if (!copiedText) {
+                alert("คัดลอกไม่ได้ กรุณาลองเลือกข้อความจากตัวอย่างแล้วคัดลอกเองครับ")
+                return
+            }
+            setCopiedText(true)
+            setTimeout(() => setCopiedText(false), 2500)
+        } catch (error) {
+            console.error(error)
+            alert("คัดลอกไม่ได้ กรุณาลองเลือกข้อความจากตัวอย่างแล้วคัดลอกเองครับ")
+        }
+    }
+
+    async function copyAllQrImages() {
+        try {
+            const files = await buildAllPersonQrFiles()
+            if (files.length === 0) {
+                setQrCopyModalMessage("ยังไม่มี QR ให้คัดลอก กรุณาตั้งค่าพร้อมเพย์ก่อนครับ")
+                setShowQrCopyPanel(true)
+                return
+            }
+
+            const copiedImages = await copyQrFilesToClipboard(files)
+            if (!copiedImages) {
+                setQrCopyModalMessage("เบราว์เซอร์นี้คัดลอกรูปหลายรูปไม่ได้ เปิดแผง QR ให้คัดลอกทีละรูปแทนครับ")
+                setShowQrCopyPanel(true)
+                return
+            }
+
+            setCopiedQr(true)
+            setTimeout(() => setCopiedQr(false), 2500)
+        } catch (error) {
+            console.error(error)
+            setQrCopyModalMessage("คัดลอกรูปไม่ได้ เปิดแผง QR ให้คัดลอกทีละรูปแทนครับ")
+            setShowQrCopyPanel(true)
+        }
     }
 
     const rawTotals = calcRawTotals()
@@ -580,8 +917,25 @@ function buildSummaryText() {
 
             <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-2">
                 <p className="text-xs text-gray-500">เลือกคนร่วมรอบ</p>
+                <div className="flex gap-2 rounded-xl bg-[#13131f] p-2">
+                    <input
+                        className="min-w-0 flex-1 bg-[#1c1c2e] border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500"
+                        placeholder="พิมพ์ชื่อเพื่อนใหม่ หรือชื่อเดิม..."
+                        value={newFriendInput}
+                        onChange={e => setNewFriendInput(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && addFriendInline()}
+                    />
+                    <button
+                        onClick={addFriendInline}
+                        title="เพิ่มเข้ารอบ"
+                        aria-label="เพิ่มเข้ารอบ"
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-500"
+                    >
+                        <PlusIcon />
+                    </button>
+                </div>
                 {friends.length === 0
-                    ? <p className="text-sm text-gray-700 text-center py-2">ไปเพิ่มเพื่อนที่แท็บ "เพื่อน / กลุ่ม" ก่อนครับ</p>
+                    ? <p className="text-sm text-gray-700 text-center py-2">พิมพ์ชื่อด้านบนเพื่อเพิ่มคนเข้ารอบได้เลย</p>
                     : <div className="flex flex-wrap gap-2">
                         {friends.map(f => {
                             const on = selected.includes(f.name)
@@ -596,7 +950,10 @@ function buildSummaryText() {
                     </div>
                 }
                 {selected.length > 0 && (
-                    <p className="text-xs text-gray-600 mt-1">เลือกแล้ว {selected.length} คน: {selected.join(", ")}</p>
+                    <div className="rounded-xl border border-purple-500/20 bg-purple-500/10 px-3 py-2">
+                        <p className="text-xs font-medium text-purple-200">เลือกแล้ว {selected.length} คน</p>
+                        <p className="mt-1 text-xs text-gray-400">{selected.join(", ")}</p>
+                    </div>
                 )}
             </div>
 
@@ -633,9 +990,11 @@ function buildSummaryText() {
                     </div>
                     <button
                         onClick={() => setShowPromptpayForm(v => !v)}
-                        className="text-xs text-emerald-400 hover:text-emerald-300 bg-[#13131f] px-3 py-1.5 rounded-lg"
+                        title={ownerPayment?.promptpay ? "แก้" : "เพิ่ม"}
+                        aria-label={ownerPayment?.promptpay ? "แก้" : "เพิ่ม"}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-[#13131f] text-emerald-400 transition-colors hover:text-emerald-300"
                     >
-                        {ownerPayment?.promptpay ? "แก้" : "เพิ่ม"}
+                        {ownerPayment?.promptpay ? <EditIcon /> : <PlusIcon />}
                     </button>
                 </div>
                 {showPromptpayForm && (
@@ -689,12 +1048,15 @@ function buildSummaryText() {
                       </div>
                       <div className="flex gap-2">
                         <button onClick={() => addScannedItem(index)}
-                          className="flex-1 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-sm font-medium">
-                          + เพิ่มรายการนี้
+                          className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-sm font-medium">
+                          <PlusIcon />
+                          <span>เพิ่มรายการนี้</span>
                         </button>
                         <button onClick={() => removeScannedItem(index)}
-                          className="flex-1 bg-[#13131f] hover:bg-red-900 py-2 rounded-xl text-sm text-gray-400">
-                          ลบรายการ
+                          title="ลบรายการ"
+                          aria-label="ลบรายการ"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#13131f] text-gray-500 hover:bg-red-600 hover:text-white">
+                          <TrashIcon />
                         </button>
                       </div>
                     </div>
@@ -847,12 +1209,17 @@ function buildSummaryText() {
                                         </div>
                                         <div className="flex gap-2">
                                             <button onClick={saveEditItem}
-                                                className="flex-1 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-sm font-medium">
-                                                บันทึก
+                                                title="บันทึก"
+                                                aria-label="บันทึก"
+                                                className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-sm font-medium">
+                                                <SaveIcon />
+                                                <span>บันทึก</span>
                                             </button>
                                             <button onClick={cancelEditItem}
-                                                className="flex-1 bg-[#1c1c2e] hover:bg-[#252540] py-2 rounded-xl text-sm text-gray-400">
-                                                ยกเลิก
+                                                title="ยกเลิก"
+                                                aria-label="ยกเลิก"
+                                                className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#1c1c2e] text-gray-500 hover:bg-[#252540] hover:text-white">
+                                                <CloseIcon />
                                             </button>
                                         </div>
                                     </div>
@@ -866,8 +1233,12 @@ function buildSummaryText() {
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <span className="text-emerald-400 text-sm">฿{item.price.toFixed(2)}</span>
-                                            <button onClick={() => startEditItem(item)} className="text-gray-500 hover:text-purple-300 text-sm">แก้</button>
-                                            <button onClick={() => deleteItem(item.id)} className="text-gray-700 hover:text-red-400 text-sm">✕</button>
+                                            <button onClick={() => startEditItem(item)} title="แก้ไข" aria-label="แก้ไข" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-gray-500 hover:bg-purple-600 hover:text-white">
+                                                <EditIcon />
+                                            </button>
+                                            <button onClick={() => deleteItem(item.id)} title="ลบ" aria-label="ลบ" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-gray-600 hover:bg-red-600 hover:text-white">
+                                                <TrashIcon />
+                                            </button>
                                         </div>
                                     </div>
                                 )}
@@ -918,15 +1289,12 @@ function buildSummaryText() {
             <div className="flex justify-between items-center">
                 <h1 className="text-lg font-semibold">สรุปรอบ: {round.name}</h1>
                 <div className="flex gap-2">
-                    <button
-                        onClick={backToEdit}
-                        className="text-xs text-gray-500 hover:text-gray-300 bg-[#1c1c2e] px-3 py-1.5 rounded-lg"
-                    >
-                        ✏️ แก้ไข
-                    </button>
-                    <button onClick={resetRound} className="text-xs text-gray-600 hover:text-gray-400">
-                        + รอบใหม่
-                    </button>
+                    <IconButton onClick={backToEdit} title="แก้ไขรอบ">
+                        <EditIcon />
+                    </IconButton>
+                    <IconButton onClick={resetRound} title="เปิดรอบใหม่">
+                        <PlusIcon />
+                    </IconButton>
                 </div>
             </div>
 
@@ -950,18 +1318,25 @@ function buildSummaryText() {
             <div className="flex gap-2">
                 <button
                     onClick={copyToClipboard}
-                    className={`flex-1 py-3 rounded-2xl text-sm font-semibold transition-all ${copied
+                    title="คัดลอกข้อความสรุป"
+                    className={`flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold transition-all ${copiedText
                         ? "bg-emerald-700 text-emerald-200"
                         : "bg-emerald-600 hover:bg-emerald-500 text-white"
                         }`}
                 >
-                    {copied ? "✓ คัดลอกแล้ว!" : "📋 คัดลอกข้อความ"}
+                    <CopyIcon />
+                    <span>{copiedText ? "คัดลอกแล้ว" : "คัดลอก"}</span>
                 </button>
                 <button
-                    onClick={shareAsImage}
-                    className="flex-1 py-3 rounded-2xl text-sm font-semibold bg-purple-600 hover:bg-purple-500 text-white"
+                    onClick={copyAllQrImages}
+                    title="คัดลอก QR ทุกคน"
+                    className={`flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold transition-all ${copiedQr
+                        ? "bg-purple-800 text-purple-100"
+                        : "bg-purple-600 hover:bg-purple-500 text-white"
+                        }`}
                 >
-                    🖼️ แชร์เป็นรูป
+                    <ImageCopyIcon />
+                    <span>{copiedQr ? "คัดลอก QR แล้ว" : "คัดลอก QR"}</span>
                 </button>
             </div>
 
@@ -973,8 +1348,61 @@ function buildSummaryText() {
                 </pre>
             </div>
 
+            {showQrCopyPanel && (
+                <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/65 px-4 pb-4 pt-16 backdrop-blur-sm sm:items-center">
+                    <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-[#181827] shadow-2xl shadow-black/40">
+                        <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                            <div>
+                                <p className="text-sm font-semibold text-white">คัดลอก QR</p>
+                                <p className="text-xs text-gray-500 mt-0.5">{qrCopyModalMessage || "กดคัดลอกรูปทีละคน แล้ววางในแชทได้เลย"}</p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setShowQrCopyPanel(false)
+                                    setQrCopyModalMessage("")
+                                }}
+                                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-gray-400 transition-all hover:bg-white/10 hover:text-white"
+                                title="ปิด"
+                                aria-label="ปิด"
+                            >
+                                <CloseIcon />
+                            </button>
+                        </div>
+                        <div className="max-h-[72vh] overflow-y-auto p-4">
+                            {selected.filter(name => qrCodes[name]).length > 0 ? (
+                                <div className="grid grid-cols-2 gap-3">
+                                    {selected.filter(name => qrCodes[name]).map(name => {
+                                        const amount = totals[name] || 0
+                                        return (
+                                            <div key={name} className="rounded-2xl border border-white/10 bg-[#10101a] p-3 text-center shadow-lg shadow-black/10">
+                                                <p className="truncate text-sm font-semibold text-white">{name}</p>
+                                                <p className="mt-0.5 text-xs font-semibold text-purple-300">฿{amount.toFixed(2)}</p>
+                                                <div className="my-3 rounded-2xl bg-white p-2">
+                                                    <img src={qrCodes[name]} alt={`QR พร้อมเพย์ ${name}`} className="mx-auto aspect-square w-full max-w-36" />
+                                                </div>
+                                                <button
+                                                    onClick={() => copyPersonImage(name)}
+                                                    className={`inline-flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold text-white transition-all ${copiedPerson === name ? "bg-emerald-700" : "bg-emerald-600 hover:bg-emerald-500"}`}
+                                                >
+                                                    <ImageCopyIcon />
+                                                    <span>{copiedPerson === name ? "คัดลอกแล้ว" : "คัดลอกรูปนี้"}</span>
+                                                </button>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="rounded-2xl border border-white/10 bg-[#10101a] p-6 text-center text-sm text-gray-300">
+                                    <p>{qrCopyModalMessage || "ยังไม่มี QR ให้แสดงในตอนนี้"}</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* card สำหรับ screenshot — ใส่ ref ตรงนี้ */}
-            <div ref={summaryRef} className="bg-[#13131f] rounded-2xl p-5 space-y-4">
+            <div className="bg-[#13131f] rounded-2xl p-5 space-y-4">
                 {/* header */}
                 <div className="text-center border-b border-gray-800 pb-4">
                     <p className="text-base font-bold text-white">🍽️ {round.name}</p>
@@ -987,7 +1415,6 @@ function buildSummaryText() {
                 <div className="space-y-1.5">
                     <p className="text-xs text-gray-600 mb-2">รายการ</p>
                     {items.map(item => {
-                        const sp = item.splitWith || []
                         return (
                             <div key={item.id} className="flex justify-between text-sm">
                                 <span className="text-gray-300">{item.name}</span>
@@ -1036,9 +1463,10 @@ function buildSummaryText() {
   const discountCut = discounts[name] || 0
   const myItems = items.filter(i => (i.splitWith || []).includes(name))
   return (
-    <div key={name} className="bg-[#10101a] border border-gray-800 rounded-xl overflow-hidden">
+    <div key={name} className="space-y-2">
+      <div className="bg-[#10101a] border border-gray-800 rounded-xl overflow-hidden">
       <div className="flex justify-between items-start gap-3 px-4 py-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-base font-semibold text-white">{name}</p>
           {discount > 0 && (
             <p className="text-xs text-emerald-600 mt-0.5">ก่อนลด ฿{beforeDiscount.toFixed(2)} • ลด ฿{discountCut.toFixed(2)}</p>
@@ -1047,9 +1475,19 @@ function buildSummaryText() {
             <p className="text-xs text-gray-600 mt-1">โอนเข้า {ownerName}</p>
           )}
         </div>
-        <div className="text-right">
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <div className="flex gap-1.5">
+            <button onClick={() => copyPersonImage(name)} title="คัดลอกรูป QR คนนี้" aria-label="คัดลอกรูป QR คนนี้" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-gray-500 hover:bg-emerald-600 hover:text-white transition-colors">
+              <ImageCopyIcon />
+            </button>
+            <button onClick={() => sharePersonImage(name)} title="แชร์รูปคนนี้" aria-label="แชร์รูปคนนี้" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-gray-500 hover:bg-purple-600 hover:text-white transition-colors">
+              <ShareIcon />
+            </button>
+          </div>
+          <div className="text-right">
           <p className="text-xs text-gray-600">ยอดโอน</p>
           <p className="text-2xl font-bold text-purple-300">฿{amount.toFixed(2)}</p>
+          </div>
         </div>
       </div>
       {qrCodes[name] && (
@@ -1061,6 +1499,7 @@ function buildSummaryText() {
           </div>
         </div>
       )}
+      </div>
       {myItems.length > 0 && (
         <div className="px-4 pb-3 space-y-1 border-t border-gray-800">
           {myItems.map(item => {

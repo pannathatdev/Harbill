@@ -6,12 +6,23 @@ import FriendsPage from "./components/FriendsPage"
 import RoundPage from "./components/RoundPage"
 import HistoryPage from "./components/HistoryPage"
 import { api } from "./api"
+import { AdSlot, SupportLink } from "./components/Monetization"
 
 const TABS = [
   { id: "/", label: "🍽️", desc: "รอบ" },
   { id: "/friends", label: "👥", desc: "เพื่อน" },
   { id: "/history", label: "🕐", desc: "ประวัติ" },
 ]
+
+function LogoutIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
+  )
+}
 
 function Layout({ children, user, onLogout }) {
   const navigate = useNavigate()
@@ -28,13 +39,24 @@ function Layout({ children, user, onLogout }) {
           <div className="flex items-center gap-3">
             {user?.avatar && <img src={user.avatar} className="w-7 h-7 rounded-full" alt="" />}
             <span className="text-sm text-white/70">{user?.name}</span>
-            <button onClick={onLogout} className="text-xs text-white/40 hover:text-white/70">ออก</button>
+            <button
+              onClick={onLogout}
+              title="ออกจากระบบ"
+              aria-label="ออกจากระบบ"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/45 transition-all hover:border-red-400/40 hover:bg-red-500/10 hover:text-red-200"
+            >
+              <LogoutIcon />
+            </button>
           </div>
         </div>
       </div>
 
       <div className="max-w-lg mx-auto px-4 pt-5 pb-28">
         {children}
+        <div className="mt-6 space-y-3">
+          <AdSlot className="overflow-hidden rounded-2xl bg-white/5 border border-white/10 px-2 py-3" />
+          <SupportLink />
+        </div>
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-10">

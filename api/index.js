@@ -11,8 +11,15 @@ require("dotenv").config()
 const db = require("./db")
 const { signToken, requireAuth } = require("./auth")
 
+const PORT = process.env.PORT || 3001
+const API_BASE_URL = process.env.API_BASE_URL || `http://localhost:${PORT}`
+const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173"
+const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || `${API_BASE_URL}/auth/google/callback`
+const isPlaceholder = value => !value || /^('|")?(GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|JWT_SECRET)('|")?$/.test(value)
+const googleAuthReady = !isPlaceholder(process.env.GOOGLE_CLIENT_ID) && !isPlaceholder(process.env.GOOGLE_CLIENT_SECRET)
+
 const app = express()
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }))
+app.use(cors({ origin: CLIENT_URL, credentials: true }))
 app.use(express.json())
 app.use(session({ secret: process.env.JWT_SECRET, resave: false, saveUninitialized: false }))
 app.use(passport.initialize())
@@ -21,31 +28,42 @@ app.use(passport.session())
 const upload = multer({ dest: "uploads/" })
 
 // ── GOOGLE OAUTH ──────────────────────────────────────────────
-passport.use(new GoogleStrategy({
-  clientID: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: "http://localhost:3001/auth/google/callback"
-}, async (accessToken, refreshToken, profile, done) => {
-  const email = profile.emails[0].value
-  const name = profile.displayName
-  const avatar = profile.photos[0]?.value
-  const google_id = profile.id
+if (googleAuthReady) {
+  passport.use(new GoogleStrategy({
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL: GOOGLE_CALLBACK_URL
+  }, async (accessToken, refreshToken, profile, done) => {
+    try {
+      const email = profile.emails?.[0]?.value
+      const name = profile.displayName
+      const avatar = profile.photos?.[0]?.value
+      const google_id = profile.id
 
-  let [rows] = await db.query("SELECT * FROM users WHERE google_id = ? OR email = ?", [google_id, email])
-  let user = rows[0]
+      if (!email) return done(new Error("Google account does not expose an email address"))
 
-  if (!user) {
-    const [r] = await db.query(
-      "INSERT INTO users (email, name, avatar, google_id) VALUES (?,?,?,?)",
-      [email, name, avatar, google_id]
-    )
-    user = { id: r.insertId, email, name, avatar }
-  } else if (!user.google_id) {
-    await db.query("UPDATE users SET google_id=?, avatar=? WHERE id=?", [google_id, avatar, user.id])
-  }
+      let [rows] = await db.query("SELECT * FROM users WHERE google_id = ? OR email = ?", [google_id, email])
+      let user = rows[0]
 
-  done(null, user)
-}))
+      if (!user) {
+        const [r] = await db.query(
+          "INSERT INTO users (email, name, avatar, google_id) VALUES (?,?,?,?)",
+          [email, name, avatar, google_id]
+        )
+        user = { id: r.insertId, email, name, avatar }
+      } else if (!user.google_id) {
+        await db.query("UPDATE users SET google_id=?, avatar=? WHERE id=?", [google_id, avatar, user.id])
+        user = { ...user, google_id, avatar }
+      }
+
+      done(null, user)
+    } catch (err) {
+      done(err)
+    }
+  }))
+} else {
+  console.warn("Google OAuth is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in api/.env.")
+}
 
 passport.serializeUser((user, done) => done(null, user.id))
 passport.deserializeUser(async (id, done) => {
@@ -53,15 +71,38 @@ passport.deserializeUser(async (id, done) => {
   done(null, rows[0])
 })
 
-app.get("/auth/google",
-  passport.authenticate("google", { scope: ["profile", "email"] })
-)
+app.get("/health", async (req, res) => {
+  try {
+    await db.query("SELECT 1")
+    res.json({ ok: true, db: true, googleAuthReady, googleCallbackUrl: GOOGLE_CALLBACK_URL })
+  } catch (err) {
+    res.status(500).json({ ok: false, db: false, error: err.message, googleAuthReady, googleCallbackUrl: GOOGLE_CALLBACK_URL })
+  }
+})
+
+app.get("/auth/google/status", (req, res) => {
+  res.json({
+    enabled: googleAuthReady,
+    callbackUrl: GOOGLE_CALLBACK_URL,
+    clientUrl: CLIENT_URL
+  })
+})
+
+app.get("/auth/google", (req, res, next) => {
+  if (!googleAuthReady) {
+    return res.status(503).json({
+      error: "Google login is not configured.",
+      callbackUrl: GOOGLE_CALLBACK_URL
+    })
+  }
+  passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next)
+})
 
 app.get("/auth/google/callback",
-  passport.authenticate("google", { session: false, failureRedirect: `${process.env.CLIENT_URL}/login?error=1` }),
+  passport.authenticate("google", { session: false, failureRedirect: `${CLIENT_URL}/login?error=google` }),
   (req, res) => {
     const token = signToken(req.user)
-    res.redirect(`${process.env.CLIENT_URL}/auth?token=${token}&name=${encodeURIComponent(req.user.name)}&avatar=${encodeURIComponent(req.user.avatar || "")}`)
+    res.redirect(`${CLIENT_URL}/auth?token=${token}&name=${encodeURIComponent(req.user.name)}&avatar=${encodeURIComponent(req.user.avatar || "")}`)
   }
 )
 
@@ -140,9 +181,17 @@ app.get("/groups", requireAuth, async (req, res) => {
 })
 
 app.post("/groups", requireAuth, async (req, res) => {
-  const { name } = req.body
+  const name = (req.body.name || "").trim()
+  if (!name) return res.status(400).json({ error: "กรุณากรอกชื่อกลุ่ม" })
   const [r] = await db.query("INSERT INTO `groups` (name, user_id) VALUES (?,?)", [name, req.user.id])
   res.json({ id: r.insertId, name, members: [] })
+})
+
+app.patch("/groups/:id", requireAuth, async (req, res) => {
+  const name = (req.body.name || "").trim()
+  if (!name) return res.status(400).json({ error: "กรุณากรอกชื่อกลุ่ม" })
+  await db.query("UPDATE `groups` SET name=? WHERE id=? AND user_id=?", [name, req.params.id, req.user.id])
+  res.json({ ok: true })
 })
 
 app.delete("/groups/:id", requireAuth, async (req, res) => {
@@ -314,4 +363,7 @@ app.post("/scan", requireAuth, upload.single("image"), async (req, res) => {
   }
 })
 
-app.listen(process.env.PORT || 3001, () => console.log("API ready on port 3001"))
+app.listen(PORT, () => {
+  console.log(`API ready on port ${PORT}`)
+  console.log(`Google callback URL: ${GOOGLE_CALLBACK_URL}`)
+})
