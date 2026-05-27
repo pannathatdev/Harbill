@@ -775,9 +775,7 @@ function buildSummaryText() {
 
     async function backToEdit() {
         // เปิดรอบใหม่ใน db (ล้าง closed_at)
-        await fetch(`http://localhost:3001/rounds/${round.id}/reopen`, {
-            method: "PATCH"
-        })
+        await api.reopenRound(round.id)
         setStep("items")
     }
 

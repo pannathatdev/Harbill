@@ -31,9 +31,7 @@ export default function HistoryPage({ onEditRound }) {
     }
 
     async function reopenRound(round) {
-        await fetch(`http://localhost:3001/rounds/${round.id}/reopen`, {
-            method: "PATCH"
-        })
+        await api.reopenRound(round.id)
         onEditRound(round)
     }
     return (

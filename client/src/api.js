@@ -114,10 +114,7 @@ export const api = {
   getRounds: () => req("/rounds"),
   createRound: (name, joiners) => post("/rounds", { name, joiners }),
   closeRound: (id) => patch(`/rounds/${id}/close`),
-  reopenRound: (id) => fetch(`${BASE}/rounds/${id}/reopen`, {
-    method: "PATCH",
-    headers: { "Authorization": `Bearer ${getToken()}` }
-  }).then(r => r.json()),
+  reopenRound: (id) => patch(`/rounds/${id}/reopen`),
   addRoundMember: (roundId, friend_name) => post(`/rounds/${roundId}/members`, { friend_name }),
 
   // Items
