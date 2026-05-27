@@ -2,7 +2,6 @@ const express = require("express")
 const cors = require("cors")
 const bcrypt = require("bcryptjs")
 const multer = require("multer")
-const fs = require("fs")
 const passport = require("passport")
 const GoogleStrategy = require("passport-google-oauth20").Strategy
 const session = require("express-session")
@@ -25,7 +24,10 @@ app.use(session({ secret: process.env.JWT_SECRET, resave: false, saveUninitializ
 app.use(passport.initialize())
 app.use(passport.session())
 
-const upload = multer({ dest: "uploads/" })
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }
+})
 
 // ── GOOGLE OAUTH ──────────────────────────────────────────────
 if (googleAuthReady) {
@@ -331,7 +333,9 @@ app.delete("/payment-info/:name", requireAuth, async (req, res) => {
 // ── SCAN ──────────────────────────────────────────────────────
 app.post("/scan", requireAuth, upload.single("image"), async (req, res) => {
   try {
-    const imageData = fs.readFileSync(req.file.path)
+    if (!req.file) return res.status(400).json({ error: "No image uploaded" })
+
+    const imageData = req.file.buffer
     const base64 = imageData.toString("base64")
     const mimeType = req.file.mimetype
 
@@ -355,7 +359,6 @@ app.post("/scan", requireAuth, upload.single("image"), async (req, res) => {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]"
     const clean = text.replace(/```json|```/g, "").trim()
     const items = JSON.parse(clean)
-    fs.unlinkSync(req.file.path)
     res.json({ items })
   } catch (err) {
     console.error(err)
@@ -363,7 +366,11 @@ app.post("/scan", requireAuth, upload.single("image"), async (req, res) => {
   }
 })
 
-app.listen(PORT, () => {
-  console.log(`API ready on port ${PORT}`)
-  console.log(`Google callback URL: ${GOOGLE_CALLBACK_URL}`)
-})
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`API ready on port ${PORT}`)
+    console.log(`Google callback URL: ${GOOGLE_CALLBACK_URL}`)
+  })
+}
+
+module.exports = app
