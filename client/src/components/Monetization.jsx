@@ -1,6 +1,8 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 
 const supportUrl = import.meta.env.VITE_SUPPORT_URL
+const supportPromptpay = import.meta.env.VITE_SUPPORT_PROMPTPAY || "0980106920"
+const supportAmount = import.meta.env.VITE_SUPPORT_AMOUNT ? Number(import.meta.env.VITE_SUPPORT_AMOUNT) : null
 const affiliateUrl = import.meta.env.VITE_AFFILIATE_URL || "https://www.trip.com/t/Lzy8mEFNtU2"
 const affiliateLabel = import.meta.env.VITE_AFFILIATE_LABEL || "ดีลสำหรับทริปถัดไป"
 const affiliateText = import.meta.env.VITE_AFFILIATE_TEXT || "จองที่พัก ตั๋วเดินทาง หรือ eSIM สำหรับทริปหน้า"
@@ -16,6 +18,46 @@ function loadAdSenseScript() {
   script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClient}`
   script.dataset.harbillAdsense = "true"
   document.head.appendChild(script)
+}
+
+function tlv(id, value) {
+  const text = String(value)
+  return `${id}${String(text.length).padStart(2, "0")}${text}`
+}
+
+function crc16Ccitt(input) {
+  let crc = 0xFFFF
+  for (let i = 0; i < input.length; i++) {
+    crc ^= input.charCodeAt(i) << 8
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1)
+      crc &= 0xFFFF
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, "0")
+}
+
+function buildPromptPayPayload(promptpay, amount) {
+  const digits = String(promptpay || "").replace(/\D/g, "")
+  if (!digits) return ""
+
+  const target = digits.length === 10 && digits.startsWith("0")
+    ? tlv("01", `0066${digits.slice(1)}`)
+    : tlv(digits.length === 13 ? "02" : "01", digits)
+
+  const parts = [
+    tlv("00", "01"),
+    tlv("01", "12"),
+    tlv("29", tlv("00", "A000000677010111") + target),
+    tlv("52", "0000"),
+    tlv("53", "764"),
+    Number.isFinite(amount) && amount > 0 ? tlv("54", amount.toFixed(2)) : "",
+    tlv("58", "TH"),
+    tlv("59", "HARBILL"),
+    tlv("60", "BANGKOK"),
+  ].join("")
+  const withoutCrc = `${parts}6304`
+  return `${withoutCrc}${crc16Ccitt(withoutCrc)}`
 }
 
 export function AdSlot({ className = "" }) {
@@ -47,36 +89,86 @@ export function AdSlot({ className = "" }) {
 }
 
 export function SupportLink() {
-  if (!supportUrl) return null
+  if (supportUrl) {
+    return (
+      <a
+        href={supportUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="block text-center text-xs text-white/40 hover:text-white/70 transition-colors"
+      >
+        สนับสนุน Harbill
+      </a>
+    )
+  }
+
+  if (!supportPromptpay) return null
 
   return (
-    <a
-      href={supportUrl}
-      target="_blank"
-      rel="noreferrer"
-      className="block text-center text-xs text-white/40 hover:text-white/70 transition-colors"
-    >
-      สนับสนุน Harbill
-    </a>
+    <span className="block text-center text-xs text-white/40">
+      สนับสนุน Harbill ผ่านพร้อมเพย์ {supportPromptpay}
+    </span>
   )
 }
 
 export function SupportCard({ className = "" }) {
-  if (!supportUrl) return null
+  const [qrUrl, setQrUrl] = useState("")
+
+  useEffect(() => {
+    if (supportUrl || !supportPromptpay) return
+    let cancelled = false
+
+    async function buildQr() {
+      const QRCode = await import("qrcode")
+      const payload = buildPromptPayPayload(supportPromptpay, supportAmount)
+      if (!payload) return
+      const image = await QRCode.default.toDataURL(payload, {
+        errorCorrectionLevel: "M",
+        margin: 1,
+        width: 180,
+      })
+      if (!cancelled) setQrUrl(image)
+    }
+
+    buildQr().catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  if (supportUrl) {
+    return (
+      <a
+        href={supportUrl}
+        target="_blank"
+        rel="noreferrer"
+        className={`block rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-center transition-colors hover:border-emerald-400/50 hover:bg-emerald-500/15 ${className}`}
+      >
+        <p className="text-sm font-semibold text-emerald-200">Harbill ช่วยประหยัดเวลาไหม?</p>
+        <p className="mt-1 text-xs text-emerald-100/70">สนับสนุนค่าเซิร์ฟเวอร์และ AI scan ให้เว็บอยู่ต่อได้</p>
+        <span className="mt-3 inline-flex rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white">
+          สนับสนุน Harbill
+        </span>
+      </a>
+    )
+  }
+
+  if (!supportPromptpay) return null
 
   return (
-    <a
-      href={supportUrl}
-      target="_blank"
-      rel="noreferrer"
-      className={`block rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-center transition-colors hover:border-emerald-400/50 hover:bg-emerald-500/15 ${className}`}
-    >
+    <div className={`rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-center ${className}`}>
       <p className="text-sm font-semibold text-emerald-200">Harbill ช่วยประหยัดเวลาไหม?</p>
       <p className="mt-1 text-xs text-emerald-100/70">สนับสนุนค่าเซิร์ฟเวอร์และ AI scan ให้เว็บอยู่ต่อได้</p>
-      <span className="mt-3 inline-flex rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white">
-        สนับสนุน Harbill
-      </span>
-    </a>
+      <div className="mx-auto mt-3 w-fit rounded-2xl bg-white p-3">
+        {qrUrl ? (
+          <img src={qrUrl} alt="PromptPay QR สนับสนุน Harbill" className="h-36 w-36" />
+        ) : (
+          <div className="flex h-36 w-36 items-center justify-center text-xs text-slate-500">กำลังสร้าง QR...</div>
+        )}
+      </div>
+      <p className="mt-3 text-sm font-semibold text-emerald-100">พร้อมเพย์ {supportPromptpay}</p>
+      <p className="mt-1 text-xs text-emerald-100/70">
+        {supportAmount ? `ยอดแนะนำ ฿${supportAmount.toFixed(2)}` : "กรอกยอดสนับสนุนเองในแอปธนาคาร"}
+      </p>
+    </div>
   )
 }
 
