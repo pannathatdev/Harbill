@@ -31,6 +31,8 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 })
 
+let aiUsageSchemaReady = false
+
 function dbErrorMessage(err) {
   if (err?.code === "ERR_OUT_OF_RANGE" || /offset.*out of range/i.test(err?.message || "")) {
     return `${err.message}. Check DB_HOST and DB_PORT: use the classic MySQL port from your database provider, not a MySQL X/Admin/HTTPS port.`
@@ -55,6 +57,92 @@ async function ensureGoogleAuthSchema() {
   if (!existing.has("google_id")) {
     await db.query("ALTER TABLE users ADD COLUMN google_id VARCHAR(255) NULL UNIQUE")
   }
+}
+
+async function ensureAiUsageSchema() {
+  if (aiUsageSchemaReady) return
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS ai_scan_usage (
+      user_id INT NOT NULL,
+      usage_date DATE NOT NULL,
+      scans INT NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, usage_date),
+      CONSTRAINT fk_ai_scan_usage_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS scan_credit_balances (
+      user_id INT PRIMARY KEY,
+      credits INT NOT NULL DEFAULT 0,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_scan_credit_balances_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS scan_credit_transactions (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      credits INT NOT NULL,
+      kind VARCHAR(32) NOT NULL,
+      reference VARCHAR(255) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_scan_credit_reference (reference),
+      INDEX idx_scan_credit_transactions_user_id (user_id),
+      CONSTRAINT fk_scan_credit_transactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+  aiUsageSchemaReady = true
+}
+
+async function checkAiScanLimit(userId) {
+  const limit = Number(process.env.FREE_SCAN_DAILY_LIMIT || 5)
+  await ensureAiUsageSchema()
+
+  const [rows] = await db.query(
+    "SELECT scans FROM ai_scan_usage WHERE user_id=? AND usage_date=CURRENT_DATE",
+    [userId]
+  )
+  const used = rows[0]?.scans || 0
+  if (!Number.isFinite(limit) || limit <= 0 || used < limit) {
+    return { allowed: true, source: "free", limit: Number.isFinite(limit) ? limit : null, used, paidCredits: 0 }
+  }
+
+  const [creditRows] = await db.query("SELECT credits FROM scan_credit_balances WHERE user_id=?", [userId])
+  const paidCredits = creditRows[0]?.credits || 0
+  return { allowed: paidCredits > 0, source: paidCredits > 0 ? "paid" : "none", limit, used, paidCredits }
+}
+
+async function recordAiScan(userId, source = "free") {
+  await db.query(`
+    INSERT INTO ai_scan_usage (user_id, usage_date, scans)
+    VALUES (?, CURRENT_DATE, 1)
+    ON DUPLICATE KEY UPDATE scans=scans+1
+  `, [userId])
+
+  if (source === "paid") {
+    await db.query(
+      "UPDATE scan_credit_balances SET credits=GREATEST(credits-1, 0) WHERE user_id=?",
+      [userId]
+    )
+    await db.query(
+      "INSERT INTO scan_credit_transactions (user_id, credits, kind, reference) VALUES (?, -1, 'scan_used', NULL)",
+      [userId]
+    )
+  }
+}
+
+async function addScanCredits(userId, credits, reference) {
+  await ensureAiUsageSchema()
+  await db.query(`
+    INSERT INTO scan_credit_transactions (user_id, credits, kind, reference)
+    VALUES (?, ?, 'purchase', ?)
+  `, [userId, credits, reference])
+  await db.query(`
+    INSERT INTO scan_credit_balances (user_id, credits)
+    VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE credits=credits+VALUES(credits)
+  `, [userId, credits])
 }
 
 app.get("/", (req, res) => {
@@ -394,9 +482,43 @@ app.delete("/payment-info/:name", requireAuth, async (req, res) => {
 })
 
 // ── SCAN ──────────────────────────────────────────────────────
+app.post("/billing/scan-credits/webhook", async (req, res) => {
+  const secret = process.env.PAYMENT_WEBHOOK_SECRET
+  if (!secret || req.headers["x-webhook-secret"] !== secret) {
+    return res.status(401).json({ error: "Unauthorized" })
+  }
+
+  const userId = Number(req.body.userId)
+  const credits = Number(req.body.credits)
+  const reference = String(req.body.reference || "")
+
+  if (!userId || !Number.isInteger(credits) || credits <= 0 || !reference) {
+    return res.status(400).json({ error: "Invalid credit payload" })
+  }
+
+  try {
+    await addScanCredits(userId, credits, reference)
+    res.json({ ok: true, userId, credits })
+  } catch (err) {
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.json({ ok: true, duplicate: true })
+    }
+    throw err
+  }
+})
+
 app.post("/scan", requireAuth, upload.single("image"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No image uploaded" })
+
+    const usage = await checkAiScanLimit(req.user.id)
+    if (!usage.allowed) {
+      return res.status(429).json({
+        error: `ใช้โควตาสแกน AI วันนี้ครบแล้ว (${usage.used}/${usage.limit})`,
+        limit: usage.limit,
+        used: usage.used
+      })
+    }
 
     const imageData = req.file.buffer
     const base64 = imageData.toString("base64")
@@ -422,7 +544,16 @@ app.post("/scan", requireAuth, upload.single("image"), async (req, res) => {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]"
     const clean = text.replace(/```json|```/g, "").trim()
     const items = JSON.parse(clean)
-    res.json({ items })
+    await recordAiScan(req.user.id, usage.source)
+    res.json({
+      items,
+      usage: {
+        source: usage.source,
+        limit: usage.limit,
+        used: usage.used + 1,
+        paidCredits: usage.source === "paid" ? usage.paidCredits - 1 : usage.paidCredits
+      }
+    })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: "อ่านไม่ได้ครับ" })

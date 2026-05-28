@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { api } from "../api"
+import { AffiliateBanner, SupportCard } from "./Monetization"
 
 const SUMMARY_TEMPLATES = [
     { id: "pay", label: "พร้อมจ่าย" },
@@ -7,6 +8,8 @@ const SUMMARY_TEMPLATES = [
     { id: "detail", label: "ละเอียด" },
     { id: "check", label: "ตรวจบิล" },
 ]
+
+const publicAppUrl = import.meta.env.VITE_PUBLIC_APP_URL || "https://harbill-sandy.vercel.app"
 
 function ShareIcon() {
     return (
@@ -154,9 +157,9 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     const [items, setItems] = useState([])
     const [manualName, setManualName] = useState("")
     const [manualPrice, setManualPrice] = useState("")
-    const [scannedItems, setScannedItems] = useState([])
     const [scanning, setScanning] = useState(false)
     const [scanError, setScanError] = useState("")
+    const [scanMessage, setScanMessage] = useState("")
     const [editingItemId, setEditingItemId] = useState(null)
     const [editingName, setEditingName] = useState("")
     const [editingPrice, setEditingPrice] = useState("")
@@ -173,6 +176,7 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     const [showQrCopyPanel, setShowQrCopyPanel] = useState(false)
     const [qrCopyModalMessage, setQrCopyModalMessage] = useState("")
     const [paymentInfo, setPaymentInfo] = useState({})
+    const manualNameRef = useRef(null)
 
     // เพิ่มเพื่อนใหม่ inline
     const [newFriendInput, setNewFriendInput] = useState("")
@@ -454,45 +458,30 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
         if (!file) return
         setScanning(true)
         setScanError("")
+        setScanMessage("")
         try {
             const { items: scanned, error } = await api.scanReceipt(file)
             if (error) throw new Error(error)
-            setScannedItems(scanned.map(item => ({
-                name: item.name || "",
-                price: item.price || 0
-            })))
-        } catch {
-            setScanError("อ่านไม่ได้ครับ ลองรูปที่ชัดกว่านี้")
+            const validItems = (scanned || [])
+                .map(item => ({
+                    name: String(item.name || "").trim(),
+                    price: parseFloat(item.price)
+                }))
+                .filter(item => item.name && !Number.isNaN(item.price))
+
+            for (const item of validItems) {
+                await addItemToRound(item.name, item.price, selected)
+            }
+
+            setScanMessage(validItems.length > 0
+                ? `เพิ่มรายการจากสลิปแล้ว ${validItems.length} รายการ`
+                : "ไม่พบรายการอาหารในรูปนี้"
+            )
+        } catch (err) {
+            setScanError(err.message || "อ่านไม่ได้ครับ ลองรูปที่ชัดกว่านี้")
         }
         setScanning(false)
         e.target.value = ""
-    }
-
-    function updateScannedItem(index, field, value) {
-      setScannedItems(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item))
-    }
-
-    async function addScannedItem(index) {
-      const item = scannedItems[index]
-      const name = item.name.trim()
-      const price = parseFloat(item.price)
-      if (!name || isNaN(price)) return
-      await addItemToRound(name, price, selected)
-      setScannedItems(prev => prev.filter((_, i) => i !== index))
-    }
-
-    async function addAllScannedItems() {
-      for (const item of scannedItems) {
-        const name = item.name.trim()
-        const price = parseFloat(item.price)
-        if (!name || isNaN(price)) continue
-        await addItemToRound(name, price, selected)
-      }
-      setScannedItems([])
-    }
-
-    function removeScannedItem(index) {
-      setScannedItems(prev => prev.filter((_, i) => i !== index))
     }
 
     async function addItemToRound(name, price, splitWith) {
@@ -507,6 +496,10 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
         await addItemToRound(name, price, selected)
         setManualName("")
         setManualPrice("")
+    }
+
+    function focusManualAdd() {
+        manualNameRef.current?.focus()
     }
 
     async function toggleSplit(itemId, name) {
@@ -667,6 +660,10 @@ function buildPaymentBlock(ownerName, ownerPayment) {
 }
 
     // สร้างข้อความสำเร็จรูปพร้อมส่งแชท
+function appendBrandFooter(text) {
+  return `${text.trimEnd()}\n\nสร้างด้วย Harbill\n${publicAppUrl}\n`
+}
+
 function buildSummaryText() {
   const rawTotals = calcRawTotals()
   const discounts = calcDiscounts(rawTotals)
@@ -699,7 +696,7 @@ function buildSummaryText() {
     })
     if (discount > 0) text += `\n*ยอดนี้หักส่วนลดรวม ฿${discount.toFixed(2)} แล้ว\n`
     if (ownerPayment?.promptpay) text += `\nสแกน QR ได้จากรูปสรุป หรือโอนด้วยพร้อมเพย์ด้านบน\n`
-    return text
+    return appendBrandFooter(text)
   }
 
   if (summaryTemplate === "short") {
@@ -712,7 +709,7 @@ function buildSummaryText() {
       ? `รวมหลังหัก ฿${collectTotal.toFixed(2)}\n\n`
       : `รวม ฿${grandTotal.toFixed(2)}\n\n`
     text += paymentBlock
-    return text
+    return appendBrandFooter(text)
   }
 
   if (summaryTemplate === "check") {
@@ -741,7 +738,7 @@ function buildSummaryText() {
       if (discount > 0) text += ` (ลด ฿${cut.toFixed(2)} จาก ฿${(rawTotals[name] || 0).toFixed(2)})`
       text += `\n`
     })
-    return text
+    return appendBrandFooter(text)
   }
 
   text += `${"─".repeat(28)}\n`
@@ -769,7 +766,7 @@ function buildSummaryText() {
     text += `\n`
   })
 
-  return text
+  return appendBrandFooter(text)
 }
 
     async function backToEdit() {
@@ -1021,57 +1018,22 @@ function buildSummaryText() {
                     {scanning ? "กำลังอ่าน AI..." : "แตะเพื่ออัปโหลดสลิป / เมนู"}
                 </label>
                 {scanError && <p className="text-red-400 text-xs mt-2">{scanError}</p>}
-            </div>
-
-            {scannedItems.length > 0 && (
-              <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-3">
-                <p className="text-xs text-gray-500">รายการจากสลิป (แก้ไขแล้วกด + เพื่อเพิ่ม)</p>
-                <div className="space-y-3">
-                  {scannedItems.map((item, index) => (
-                    <div key={index} className="bg-[#13131f] rounded-xl p-3 space-y-2">
-                      <div className="flex gap-2">
-                        <input
-                          className="flex-1 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
-                          placeholder="ชื่อรายการ"
-                          value={item.name}
-                          onChange={e => updateScannedItem(index, "name", e.target.value)}
-                        />
-                        <input
-                          className="w-28 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
-                          placeholder="ราคา"
-                          type="number"
-                          value={item.price}
-                          onChange={e => updateScannedItem(index, "price", e.target.value)}
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => addScannedItem(index)}
-                          className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-sm font-medium">
-                          <PlusIcon />
-                          <span>เพิ่มรายการนี้</span>
-                        </button>
-                        <button onClick={() => removeScannedItem(index)}
-                          title="ลบรายการ"
-                          aria-label="ลบรายการ"
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#13131f] text-gray-500 hover:bg-red-600 hover:text-white">
-                          <TrashIcon />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={addAllScannedItems}
-                  className="w-full bg-purple-600 hover:bg-purple-500 py-3 rounded-2xl text-sm font-medium">
-                  เพิ่มทั้งหมด
+                {scanMessage && <p className="text-emerald-400 text-xs mt-2">{scanMessage}</p>}
+                <button
+                    type="button"
+                    onClick={focusManualAdd}
+                    className="mt-3 w-full rounded-xl border border-white/10 bg-[#13131f] py-2 text-sm font-medium text-gray-300 transition-colors hover:border-emerald-500/60 hover:text-white"
+                >
+                    + เพิ่มรายการเอง
                 </button>
-              </div>
-            )}
+            </div>
 
             {/* เพิ่มรายการเอง */}
             <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-2">
                 <p className="text-xs text-gray-500">เพิ่มรายการเอง</p>
                 <div className="flex gap-2">
                     <input
+                        ref={manualNameRef}
                         className="flex-1 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
                         placeholder="ชื่อรายการ..."
                         value={manualName}
@@ -1338,6 +1300,9 @@ function buildSummaryText() {
                 </button>
             </div>
 
+            <SupportCard />
+            <AffiliateBanner />
+
             {/* preview ข้อความ */}
             <div className="bg-[#1c1c2e] rounded-2xl p-4">
                 <p className="text-xs text-gray-500 mb-2">ตัวอย่างข้อความ</p>
@@ -1514,6 +1479,10 @@ function buildSummaryText() {
     </div>
   )
 })}
+                </div>
+                <div className="border-t border-gray-800 pt-4 text-center">
+                    <p className="text-[11px] font-semibold text-gray-600">สร้างด้วย Harbill</p>
+                    <p className="mt-1 text-[11px] text-gray-700">{publicAppUrl}</p>
                 </div>
             </div>
 

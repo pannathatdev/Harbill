@@ -80,3 +80,30 @@ CREATE TABLE IF NOT EXISTS payment_info (
   UNIQUE KEY uniq_payment_user_friend (user_id, friend_name),
   CONSTRAINT fk_payment_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ai_scan_usage (
+  user_id INT NOT NULL,
+  usage_date DATE NOT NULL,
+  scans INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, usage_date),
+  CONSTRAINT fk_ai_scan_usage_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS scan_credit_balances (
+  user_id INT PRIMARY KEY,
+  credits INT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_scan_credit_balances_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS scan_credit_transactions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  credits INT NOT NULL,
+  kind VARCHAR(32) NOT NULL,
+  reference VARCHAR(255) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_scan_credit_reference (reference),
+  INDEX idx_scan_credit_transactions_user_id (user_id),
+  CONSTRAINT fk_scan_credit_transactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
