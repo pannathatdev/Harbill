@@ -39,13 +39,17 @@ function clearApiCache() {
 
 async function req(path, options = {}) {
   const method = options.method || "GET"
-  if (method === "GET") {
+  const skipCache = options.skipCache || options.cache === "no-store"
+  const fetchOptions = { ...options }
+  delete fetchOptions.skipCache
+
+  if (method === "GET" && !skipCache) {
     const cached = readCache(path)
     if (cached) return cached
   }
 
   const res = await fetch(BASE + path, {
-    ...options,
+    ...fetchOptions,
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${getToken()}`,
@@ -70,7 +74,7 @@ async function req(path, options = {}) {
     throw new Error(data?.error || `Request failed: ${res.status}`)
   }
 
-  if (method === "GET") writeCache(path, data)
+  if (method === "GET" && !skipCache) writeCache(path, data)
   if (method !== "GET") clearApiCache()
 
   return data
@@ -111,7 +115,7 @@ export const api = {
   removeGroupMember: (gid, name) => del(`/groups/${gid}/members/${name}`),
 
   // Rounds
-  getRounds: () => req("/rounds"),
+  getRounds: (options) => req("/rounds", options),
   createRound: (name, joiners) => post("/rounds", { name, joiners }),
   closeRound: (id) => patch(`/rounds/${id}/close`),
   reopenRound: (id) => patch(`/rounds/${id}/reopen`),

@@ -26,7 +26,7 @@ export default function HistoryPage({ onEditRound }) {
     useEffect(() => { load() }, [])
 
     async function load() {
-        const all = await api.getRounds()
+        const all = await api.getRounds({ skipCache: true })
         setRounds(all.filter(r => r.closed_at))
     }
 

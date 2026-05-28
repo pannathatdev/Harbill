@@ -584,6 +584,7 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
 
     async function finishRound() {
         await api.closeRound(round.id)
+        api.clearCache()
         setStep("summary")
     }
 
