@@ -27,7 +27,7 @@ export default function HistoryPage({ onEditRound }) {
 
     async function load() {
         const all = await api.getRounds({ skipCache: true })
-        setRounds(all.filter(r => r.closed_at))
+        setRounds(all)
     }
 
     async function reopenRound(round) {
@@ -86,7 +86,7 @@ r.joiners.forEach(n => {
                             >
                                 <div>
                                     <p className="font-medium text-sm">{r.name}</p>
-                                    <p className="text-xs text-gray-600">{date} • {r.joiners.length} คน</p>
+                                    <p className="text-xs text-gray-600">{date} • {r.joiners.length} คน • {r.closed_at ? "ปิดแล้ว" : "ยังไม่ปิด"}</p>
                                 </div>
                                 <div className="flex items-center gap-3">
                                     <span className="text-emerald-400 font-semibold">฿{total.toFixed(2)}</span>
