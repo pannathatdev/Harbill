@@ -4,6 +4,8 @@ const supportUrl = import.meta.env.VITE_SUPPORT_URL
 const supportPromptpay = import.meta.env.VITE_SUPPORT_PROMPTPAY || "0980106920"
 const supportAmount = import.meta.env.VITE_SUPPORT_AMOUNT ? Number(import.meta.env.VITE_SUPPORT_AMOUNT) : null
 const affiliateUrl = import.meta.env.VITE_AFFILIATE_URL || "https://www.trip.com/t/Lzy8mEFNtU2"
+const affiliateImage = import.meta.env.VITE_AFFILIATE_IMAGE
+const affiliateIframeUrl = import.meta.env.VITE_AFFILIATE_IFRAME_URL || "https://th.trip.com/partners/ad/DB17443778?Allianceid=8395178&SID=315621811&trip_sub1="
 const affiliateLabel = import.meta.env.VITE_AFFILIATE_LABEL || "ดีลสำหรับทริปถัดไป"
 const affiliateText = import.meta.env.VITE_AFFILIATE_TEXT || "จองที่พัก ตั๋วเดินทาง หรือ eSIM สำหรับทริปหน้า"
 const adsenseClient = import.meta.env.VITE_ADSENSE_CLIENT
@@ -197,6 +199,24 @@ export function SupportCard({ className = "" }) {
 }
 
 export function AffiliateBanner({ className = "" }) {
+  if (affiliateIframeUrl) {
+    return (
+      <div className={`overflow-hidden rounded-2xl border border-purple-500/20 bg-purple-500/10 p-3 ${className}`}>
+        <div className="mx-auto flex w-full max-w-[468px] justify-center">
+          <iframe
+            src={affiliateIframeUrl}
+            title="Trip.com travel deals"
+            width="468"
+            height="60"
+            className="h-[60px] w-full max-w-[468px] border-0"
+            loading="lazy"
+            scrolling="no"
+          />
+        </div>
+      </div>
+    )
+  }
+
   if (!affiliateUrl) return null
 
   return (
@@ -204,11 +224,21 @@ export function AffiliateBanner({ className = "" }) {
       href={affiliateUrl}
       target="_blank"
       rel="noreferrer"
-      className={`block rounded-2xl border border-purple-500/20 bg-purple-500/10 p-4 transition-colors hover:border-purple-400/50 hover:bg-purple-500/15 ${className}`}
+      className={`block overflow-hidden rounded-2xl border border-purple-500/20 bg-purple-500/10 transition-colors hover:border-purple-400/50 hover:bg-purple-500/15 ${className}`}
     >
-      <p className="text-xs font-semibold uppercase tracking-wide text-purple-200/80">{affiliateLabel}</p>
-      <p className="mt-1 text-sm font-semibold text-white">{affiliateText}</p>
-      <p className="mt-2 text-xs text-purple-100/60">เปิดในแท็บใหม่</p>
+      {affiliateImage && (
+        <img
+          src={affiliateImage}
+          alt=""
+          loading="lazy"
+          className="h-28 w-full object-cover"
+        />
+      )}
+      <div className="p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-purple-200/80">{affiliateLabel}</p>
+        <p className="mt-1 text-sm font-semibold text-white">{affiliateText}</p>
+        <p className="mt-2 text-xs text-purple-100/60">เปิดในแท็บใหม่</p>
+      </div>
     </a>
   )
 }
