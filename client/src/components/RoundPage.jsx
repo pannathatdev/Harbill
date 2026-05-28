@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react"
 import { api } from "../api"
-import QRCode from "qrcode"
 
 const SUMMARY_TEMPLATES = [
     { id: "pay", label: "พร้อมจ่าย" },
@@ -864,13 +863,14 @@ function buildSummaryText() {
                 return
             }
 
+            const QRCode = await import("qrcode")
             const next = {}
             for (const name of selected) {
                 const amount = totals[name] || 0
                 if (amount <= 0) continue
                 const payload = buildPromptPayPayload(ownerPayment.promptpay, amount)
                 if (!payload) continue
-                next[name] = await QRCode.toDataURL(payload, {
+                next[name] = await QRCode.default.toDataURL(payload, {
                     errorCorrectionLevel: "M",
                     margin: 1,
                     width: 180,

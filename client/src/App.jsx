@@ -90,7 +90,13 @@ function RequireAuth({ children, user, onLogout }) {
 }
 
 export default function App() {
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null")
+    } catch {
+      return null
+    }
+  })
   const [checking, setChecking] = useState(true)
   const [editRound, setEditRound] = useState(null)
   const navigate = useNavigate()
@@ -103,6 +109,10 @@ export default function App() {
     }
 
     // verify token กับ server ทุกครั้งที่เปิดแอป
+    if (localStorage.getItem("user")) {
+      setChecking(false)
+    }
+
     api.me()
       .then(u => {
         if (u?.id) {
