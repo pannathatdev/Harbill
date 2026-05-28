@@ -69,7 +69,7 @@ export default function LoginPage() {
 
         <div className="bg-white/10 backdrop-blur-md rounded-3xl p-6 shadow-2xl border border-white/20">
           <div className="flex bg-white/10 rounded-2xl p-1 mb-6">
-            {["login", "register"].map(item => (
+            {["login"].map(item => (
               <button
                 key={item}
                 onClick={() => { setMode(item); setError("") }}

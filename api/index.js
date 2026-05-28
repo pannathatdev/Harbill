@@ -17,6 +17,7 @@ const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || `${API_BASE_URL}/
 const isPlaceholder = value => !value || /^('|")?(GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|JWT_SECRET)('|")?$/.test(value)
 const googleAuthReady = !isPlaceholder(process.env.GOOGLE_CLIENT_ID) && !isPlaceholder(process.env.GOOGLE_CLIENT_SECRET)
 const SESSION_SECRET = !isPlaceholder(process.env.JWT_SECRET) ? process.env.JWT_SECRET : "local-development-secret"
+const emailRegisterEnabled = process.env.EMAIL_REGISTER_ENABLED === "true"
 
 const app = express()
 app.use(cors({ origin: CLIENT_URL, credentials: true }))
@@ -128,6 +129,10 @@ app.get("/auth/google/callback",
 
 // ── EMAIL AUTH ────────────────────────────────────────────────
 app.post("/auth/register", async (req, res) => {
+  if (!emailRegisterEnabled) {
+    return res.status(403).json({ error: "Registration is temporarily closed." })
+  }
+
   const { email, password, name } = req.body
   if (!email || !password || !name) return res.status(400).json({ error: "กรอกให้ครบครับ" })
   try {
