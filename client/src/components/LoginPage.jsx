@@ -19,7 +19,7 @@ export default function LoginPage() {
     document.title = "Harbill | ระบบจัดการและหารบิล"
 
     const params = new URLSearchParams(window.location.search)
-    if (params.get("error") === "google") {
+    if (params.get("error")?.startsWith("google")) {
       setError("เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาตรวจสอบการตั้งค่า OAuth")
     }
 

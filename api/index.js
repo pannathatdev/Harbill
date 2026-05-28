@@ -31,6 +31,32 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 })
 
+function dbErrorMessage(err) {
+  if (err?.code === "ERR_OUT_OF_RANGE" || /offset.*out of range/i.test(err?.message || "")) {
+    return `${err.message}. Check DB_HOST and DB_PORT: use the classic MySQL port from your database provider, not a MySQL X/Admin/HTTPS port.`
+  }
+  return err.message
+}
+
+async function ensureGoogleAuthSchema() {
+  const [columns] = await db.query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'users'
+      AND COLUMN_NAME IN ('avatar', 'google_id')
+  `)
+  const existing = new Set(columns.map(column => column.COLUMN_NAME))
+
+  if (!existing.has("avatar")) {
+    await db.query("ALTER TABLE users ADD COLUMN avatar TEXT NULL")
+  }
+
+  if (!existing.has("google_id")) {
+    await db.query("ALTER TABLE users ADD COLUMN google_id VARCHAR(255) NULL UNIQUE")
+  }
+}
+
 app.get("/", (req, res) => {
   res.json({ ok: true, service: "harbill-api" })
 })
@@ -43,6 +69,8 @@ if (googleAuthReady) {
     callbackURL: GOOGLE_CALLBACK_URL
   }, async (accessToken, refreshToken, profile, done) => {
     try {
+      await ensureGoogleAuthSchema()
+
       const email = profile.emails?.[0]?.value
       const name = profile.displayName
       const avatar = profile.photos?.[0]?.value
@@ -80,8 +108,10 @@ passport.deserializeUser(async (id, done) => {
 })
 
 app.get("/health", async (req, res) => {
-  const missing = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "JWT_SECRET"]
-    .filter(key => isPlaceholder(process.env[key]))
+  const usingDatabaseUrl = Boolean(process.env.DATABASE_URL || process.env.MYSQL_URL || process.env.MYSQL_URI)
+  const dbKeys = usingDatabaseUrl ? [] : ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"]
+  const missing = [...dbKeys, "JWT_SECRET"].filter(key => isPlaceholder(process.env[key]))
+  const dbConfig = typeof db.getDebugInfo === "function" ? db.getDebugInfo() : undefined
 
   if (missing.length > 0) {
     return res.status(500).json({
@@ -89,15 +119,16 @@ app.get("/health", async (req, res) => {
       db: false,
       error: `Missing environment variables: ${missing.join(", ")}`,
       googleAuthReady,
-      googleCallbackUrl: GOOGLE_CALLBACK_URL
+      googleCallbackUrl: GOOGLE_CALLBACK_URL,
+      dbConfig
     })
   }
 
   try {
     await db.query("SELECT 1")
-    res.json({ ok: true, db: true, googleAuthReady, googleCallbackUrl: GOOGLE_CALLBACK_URL })
+    res.json({ ok: true, db: true, googleAuthReady, googleCallbackUrl: GOOGLE_CALLBACK_URL, dbConfig })
   } catch (err) {
-    res.status(500).json({ ok: false, db: false, error: err.message, googleAuthReady, googleCallbackUrl: GOOGLE_CALLBACK_URL })
+    res.status(500).json({ ok: false, db: false, error: dbErrorMessage(err), googleAuthReady, googleCallbackUrl: GOOGLE_CALLBACK_URL, dbConfig })
   }
 })
 
@@ -119,13 +150,22 @@ app.get("/auth/google", (req, res, next) => {
   passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next)
 })
 
-app.get("/auth/google/callback",
-  passport.authenticate("google", { session: false, failureRedirect: `${CLIENT_URL}/login?error=google` }),
-  (req, res) => {
+app.get("/auth/google/callback", (req, res, next) => {
+  passport.authenticate("google", { session: false }, (err, user) => {
+    if (err) {
+      console.error("Google OAuth callback failed:", err)
+      return res.redirect(`${CLIENT_URL}/login?error=google_internal`)
+    }
+
+    if (!user) {
+      return res.redirect(`${CLIENT_URL}/login?error=google`)
+    }
+
+    req.user = user
     const token = signToken(req.user)
     res.redirect(`${CLIENT_URL}/auth?token=${token}&name=${encodeURIComponent(req.user.name)}&avatar=${encodeURIComponent(req.user.avatar || "")}`)
-  }
-)
+  })(req, res, next)
+})
 
 // ── EMAIL AUTH ────────────────────────────────────────────────
 app.post("/auth/register", async (req, res) => {

@@ -1,26 +1,20 @@
 const fs = require("fs")
 const path = require("path")
 const mysql = require("mysql2/promise")
+const { getPoolConfig } = require("../dbConfig")
 require("dotenv").config()
 
-function getSslConfig() {
-  if (process.env.DB_SSL !== "true") return undefined
-  if (process.env.DB_CA_PATH) {
-    return { ca: fs.readFileSync(process.env.DB_CA_PATH, "utf8") }
-  }
-  return { rejectUnauthorized: false }
-}
-
 async function main() {
-  const database = process.env.DB_NAME
+  const config = getPoolConfig()
+  const database = config.database
   if (!database) throw new Error("DB_NAME is missing in api/.env")
 
   const connection = await mysql.createConnection({
-    host: process.env.DB_HOST || "localhost",
-    port: process.env.DB_PORT || 3306,
-    user: process.env.DB_USER || "root",
-    password: process.env.DB_PASSWORD || "",
-    ssl: getSslConfig(),
+    host: config.host || "localhost",
+    port: config.port || 3306,
+    user: config.user || "root",
+    password: config.password || "",
+    ssl: config.ssl,
     multipleStatements: true
   })
 
