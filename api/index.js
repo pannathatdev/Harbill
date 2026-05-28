@@ -144,47 +144,13 @@ app.post("/auth/register", async (req, res) => {
 })
 
 app.post("/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body
-
-    const [rows] = await db.query(
-      "SELECT * FROM users WHERE email=?",
-      [email]
-    )
-
-    const user = rows[0]
-
-    if (!user || !user.password) {
-      return res.status(400).json({
-        error: "ไม่พบบัญชีนี้ครับ"
-      })
-    }
-
-    const ok = await bcrypt.compare(password, user.password)
-
-    if (!ok) {
-      return res.status(400).json({
-        error: "รหัสผ่านไม่ถูกต้องครับ"
-      })
-    }
-
-    res.json({
-      token: signToken(user),
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatar: user.avatar
-      }
-    })
-
-  } catch (err) {
-    console.error(err)
-
-    res.status(500).json({
-      error: err.message
-    })
-  }
+  const { email, password } = req.body
+  const [rows] = await db.query("SELECT * FROM users WHERE email=?", [email])
+  const user = rows[0]
+  if (!user || !user.password) return res.status(400).json({ error: "ไม่พบบัญชีนี้ครับ" })
+  const ok = await bcrypt.compare(password, user.password)
+  if (!ok) return res.status(400).json({ error: "รหัสผ่านไม่ถูกต้องครับ" })
+  res.json({ token: signToken(user), user: { id: user.id, email: user.email, name: user.name, avatar: user.avatar } })
 })
 
 app.get("/auth/me", requireAuth, (req, res) => {
