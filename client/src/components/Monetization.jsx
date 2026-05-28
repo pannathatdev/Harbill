@@ -106,13 +106,14 @@ export function SupportLink() {
 
   return (
     <span className="block text-center text-xs text-white/40">
-      สนับสนุน Harbill ผ่านพร้อมเพย์ {supportPromptpay}
+      สนับสนุน Harbill ผ่านพร้อมเพย์
     </span>
   )
 }
 
 export function SupportCard({ className = "" }) {
   const [qrUrl, setQrUrl] = useState("")
+  const [showQr, setShowQr] = useState(false)
 
   useEffect(() => {
     if (supportUrl || !supportPromptpay) return
@@ -157,17 +158,40 @@ export function SupportCard({ className = "" }) {
     <div className={`rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-center ${className}`}>
       <p className="text-sm font-semibold text-emerald-200">Harbill ช่วยประหยัดเวลาไหม?</p>
       <p className="mt-1 text-xs text-emerald-100/70">สนับสนุนค่าเซิร์ฟเวอร์และ AI scan ให้เว็บอยู่ต่อได้</p>
-      <div className="mx-auto mt-3 w-fit rounded-2xl bg-white p-3">
-        {qrUrl ? (
-          <img src={qrUrl} alt="PromptPay QR สนับสนุน Harbill" className="h-36 w-36" />
-        ) : (
-          <div className="flex h-36 w-36 items-center justify-center text-xs text-slate-500">กำลังสร้าง QR...</div>
-        )}
-      </div>
-      <p className="mt-3 text-sm font-semibold text-emerald-100">พร้อมเพย์ {supportPromptpay}</p>
+      <button
+        type="button"
+        onClick={() => setShowQr(true)}
+        className="mt-3 inline-flex rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-400"
+      >
+        สแกน QR สนับสนุน
+      </button>
       <p className="mt-1 text-xs text-emerald-100/70">
         {supportAmount ? `ยอดแนะนำ ฿${supportAmount.toFixed(2)}` : "กรอกยอดสนับสนุนเองในแอปธนาคาร"}
       </p>
+      {showQr && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-xs rounded-2xl border border-white/10 bg-[#181827] p-5 text-center shadow-2xl">
+            <p className="text-sm font-semibold text-white">สนับสนุน Harbill</p>
+            <p className="mt-1 text-xs text-gray-400">
+              {supportAmount ? `สแกนจ่าย ฿${supportAmount.toFixed(2)}` : "สแกนแล้วกรอกยอดเอง"}
+            </p>
+            <div className="mx-auto mt-4 w-fit rounded-2xl bg-white p-3">
+              {qrUrl ? (
+                <img src={qrUrl} alt="PromptPay QR สนับสนุน Harbill" className="h-48 w-48" />
+              ) : (
+                <div className="flex h-48 w-48 items-center justify-center text-xs text-slate-500">กำลังสร้าง QR...</div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowQr(false)}
+              className="mt-4 w-full rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
+            >
+              ปิด
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
