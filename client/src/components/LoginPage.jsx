@@ -283,6 +283,18 @@ export default function LoginPage() {
           font-weight: 500;
         }
 
+        @media (max-width: 1280px) {
+          .hb-page {
+            grid-template-columns: minmax(0, 1fr) 400px;
+          }
+          .hb-left-inner {
+            max-width: 620px;
+          }
+          .hb-title {
+            font-size: clamp(2rem, 4.2vw, 3.4rem);
+          }
+        }
+
         @media (max-width: 1024px) {
           .hb-page {
             grid-template-columns: 1fr;
@@ -311,6 +323,29 @@ export default function LoginPage() {
           }
         }
 
+        @media (max-width: 768px) {
+          .hb-left {
+            padding: 1.1rem 0.95rem 0.6rem;
+          }
+          .hb-hero {
+            margin: 1rem 0 0.2rem;
+          }
+          .hb-desc {
+            font-size: 0.9rem;
+            line-height: 1.8;
+            max-width: 50ch;
+          }
+          .hb-feat {
+            min-width: 96px;
+          }
+          .hb-right {
+            padding: 1rem 0.95rem 1.4rem;
+          }
+          .hb-status-chip {
+            margin-bottom: 1.2rem;
+          }
+        }
+
         @media (max-width: 640px) {
           .hb-title {
             font-size: clamp(2rem, 8vw, 2.8rem);
@@ -320,6 +355,36 @@ export default function LoginPage() {
           }
           .hb-right-title {
             font-size: 1.7rem;
+          }
+          .hb-right-sub {
+            margin-bottom: 1.25rem;
+          }
+          .hb-google-btn {
+            height: 48px;
+            font-size: 0.9rem;
+          }
+          .hb-note {
+            font-size: 0.75rem;
+          }
+        }
+
+        @media (max-width: 420px) {
+          .hb-left {
+            padding-left: 0.8rem;
+            padding-right: 0.8rem;
+          }
+          .hb-title {
+            font-size: clamp(1.8rem, 9vw, 2.25rem);
+          }
+          .hb-eyebrow {
+            font-size: 0.66rem;
+          }
+          .hb-features {
+            gap: 0.7rem;
+          }
+          .hb-feat {
+            min-width: 84px;
+            padding-top: 0.55rem;
           }
         }
       `}</style>
