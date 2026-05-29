@@ -45,336 +45,351 @@ export default function LoginPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=DM+Sans:wght@300;400;500;600&display=swap');
 
         .hb-page {
           min-height: 100vh;
-          background: linear-gradient(135deg, #0a0f1e 0%, #111827 60%, #0f1c2e 100%);
-          display: flex;
-          align-items: stretch;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 440px;
+          background: linear-gradient(130deg, #090f1f 0%, #10192b 56%, #14213a 100%);
           font-family: 'DM Sans', sans-serif;
           position: relative;
           overflow: hidden;
         }
         .hb-page::before {
-          content: '';
+          content: "";
           position: fixed;
           inset: 0;
           background:
-            radial-gradient(ellipse 60% 60% at 20% 50%, rgba(29,158,117,0.07) 0%, transparent 70%),
-            radial-gradient(ellipse 40% 40% at 80% 20%, rgba(83,74,183,0.09) 0%, transparent 70%);
+            radial-gradient(70% 65% at 22% 52%, rgba(19, 147, 112, 0.12) 0%, transparent 70%),
+            radial-gradient(45% 45% at 86% 18%, rgba(35, 64, 130, 0.22) 0%, transparent 72%);
           pointer-events: none;
         }
 
-        /* ── LEFT ── */
         .hb-left {
-          flex: 1.1;
+          padding: clamp(1.25rem, 2.6vw, 3rem);
           display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          padding: 2.5rem 3rem 2.5rem 3.5rem;
+          justify-content: center;
           position: relative;
           z-index: 1;
         }
-        .hb-logo-row {
+        .hb-left-inner {
+          width: 100%;
+          max-width: 700px;
+          min-height: min(84vh, 820px);
           display: flex;
+          flex-direction: column;
+        }
+        .hb-logo-row {
+          display: inline-flex;
           align-items: center;
           gap: 10px;
+          margin-top: 0.25rem;
         }
         .hb-logo-dot {
           width: 10px;
           height: 10px;
-          border-radius: 50%;
-          background: #1d9e75;
-          box-shadow: 0 0 0 3px rgba(29,158,117,0.2);
+          border-radius: 999px;
+          background: #16986f;
+          box-shadow: 0 0 0 3px rgba(22, 152, 111, 0.25);
         }
         .hb-logo-text {
-          font-size: 15px;
-          font-weight: 500;
-          color: rgba(255,255,255,0.9);
-          letter-spacing: 0.03em;
+          font-size: 1rem;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.9);
+          letter-spacing: 0.02em;
         }
+
         .hb-hero {
-          margin-top: auto;
-          padding-bottom: 2rem;
+          margin: auto 0;
+          padding: 2rem 0;
         }
         .hb-eyebrow {
-          font-size: 11px;
-          font-weight: 500;
-          letter-spacing: 0.12em;
+          font-size: 0.72rem;
           text-transform: uppercase;
-          color: #1d9e75;
-          margin-bottom: 1.1rem;
+          letter-spacing: 0.14em;
+          color: #22a27b;
+          font-weight: 600;
+          margin: 0 0 1.2rem;
         }
         .hb-title {
+          margin: 0;
           font-family: 'Playfair Display', serif;
-          font-size: clamp(2.4rem, 4vw, 3.2rem);
-          font-weight: 700;
-          color: #fff;
+          font-size: clamp(2.1rem, 4.5vw, 3.9rem);
           line-height: 1.12;
-          margin: 0 0 1.1rem;
+          color: #f8fbff;
+          max-width: 13ch;
         }
         .hb-title-accent {
-          color: #1d9e75;
+          color: #24ab82;
         }
         .hb-desc {
-          font-size: 14px;
-          font-weight: 300;
-          color: rgba(255,255,255,0.4);
-          line-height: 1.85;
-          max-width: 380px;
+          margin-top: 1.2rem;
+          max-width: 44ch;
+          font-size: 0.95rem;
+          line-height: 1.9;
+          color: rgba(255, 255, 255, 0.63);
         }
         .hb-features {
+          margin-top: 2rem;
           display: flex;
-          gap: 1.5rem;
-          margin-top: 2.5rem;
+          gap: 1.05rem;
           flex-wrap: wrap;
         }
         .hb-feat {
-          border-top: 0.5px solid rgba(255,255,255,0.1);
-          padding-top: 0.85rem;
-          min-width: 80px;
+          min-width: 106px;
+          padding-top: 0.75rem;
+          border-top: 1px solid rgba(255, 255, 255, 0.14);
         }
         .hb-feat-label {
-          font-size: 10px;
-          font-weight: 500;
-          letter-spacing: 0.08em;
+          margin: 0;
+          font-size: 0.62rem;
+          letter-spacing: 0.1em;
           text-transform: uppercase;
-          color: rgba(255,255,255,0.25);
-          margin-bottom: 4px;
+          color: rgba(255, 255, 255, 0.42);
+          font-weight: 600;
         }
         .hb-feat-val {
-          font-size: 13px;
-          font-weight: 400;
-          color: rgba(255,255,255,0.65);
+          margin: 0.3rem 0 0;
+          font-size: 0.85rem;
+          color: rgba(255, 255, 255, 0.82);
+          font-weight: 500;
         }
 
-        /* ── RIGHT ── */
         .hb-right {
-          width: 400px;
-          background: rgba(255,255,255,0.04);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
-          border-left: 0.5px solid rgba(255,255,255,0.08);
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
+          border-left: 1px solid rgba(255, 255, 255, 0.12);
+          backdrop-filter: blur(18px);
+          -webkit-backdrop-filter: blur(18px);
+          padding: clamp(1.25rem, 2.2vw, 2.3rem);
           display: flex;
-          flex-direction: column;
+          align-items: center;
           justify-content: center;
-          padding: 3rem 2.5rem;
           position: relative;
           z-index: 1;
+        }
+        .hb-right-inner {
+          width: 100%;
+          max-width: 350px;
         }
         .hb-status-chip {
           display: inline-flex;
           align-items: center;
-          gap: 6px;
-          background: rgba(29,158,117,0.1);
-          border: 0.5px solid rgba(29,158,117,0.25);
+          gap: 7px;
           border-radius: 999px;
-          padding: 4px 10px;
-          font-size: 11px;
-          color: rgba(29,158,117,0.9);
-          margin-bottom: 2rem;
-          width: fit-content;
+          padding: 0.33rem 0.65rem;
+          font-size: 0.7rem;
+          border: 1px solid rgba(22, 152, 111, 0.33);
+          background: rgba(22, 152, 111, 0.13);
+          color: #31b38d;
+          margin-bottom: 1.6rem;
         }
         .hb-pulse {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #1d9e75;
-          animation: hbPulse 2s infinite;
-          flex-shrink: 0;
+          width: 7px;
+          height: 7px;
+          border-radius: 999px;
+          background: #1fa97f;
+          animation: hbPulse 2.1s ease-in-out infinite;
         }
         @keyframes hbPulse {
           0%, 100% { opacity: 1; }
-          50%       { opacity: 0.35; }
+          50% { opacity: 0.35; }
         }
+
         .hb-right-eyebrow {
-          font-size: 11px;
-          font-weight: 500;
-          letter-spacing: 0.1em;
+          margin: 0 0 0.45rem;
+          font-size: 0.72rem;
+          letter-spacing: 0.11em;
           text-transform: uppercase;
-          color: #1d9e75;
-          margin-bottom: 0.5rem;
+          color: #22a27b;
+          font-weight: 600;
         }
         .hb-right-title {
+          margin: 0;
+          color: #f8fbff;
           font-family: 'Playfair Display', serif;
-          font-size: 1.75rem;
-          font-weight: 700;
-          color: #fff;
-          margin: 0 0 0.5rem;
+          font-size: 2rem;
+          line-height: 1.2;
         }
         .hb-right-sub {
-          font-size: 13px;
-          color: rgba(255,255,255,0.38);
-          line-height: 1.7;
-          margin-bottom: 2rem;
+          margin: 0.8rem 0 1.7rem;
+          color: rgba(255, 255, 255, 0.56);
+          line-height: 1.75;
+          font-size: 0.9rem;
         }
 
-        /* Error */
         .hb-error {
-          background: rgba(224,75,74,0.12);
-          border: 0.5px solid rgba(224,75,74,0.3);
-          border-radius: 8px;
-          padding: 11px 14px;
-          font-size: 13px;
-          color: #f09595;
-          margin-bottom: 1.25rem;
-          line-height: 1.6;
+          margin-bottom: 1rem;
+          border-radius: 0.65rem;
+          border: 1px solid rgba(221, 84, 84, 0.38);
+          background: rgba(221, 84, 84, 0.13);
+          color: #f2a3a3;
+          font-size: 0.84rem;
+          line-height: 1.55;
+          padding: 0.62rem 0.8rem;
         }
 
-        /* Google button */
         .hb-google-btn {
-          display: flex;
+          width: 100%;
+          height: 50px;
+          border-radius: 0.72rem;
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          background: rgba(255, 255, 255, 0.08);
+          color: #eaf2f8;
+          font-size: 0.95rem;
+          font-weight: 600;
+          display: inline-flex;
           align-items: center;
           justify-content: center;
           gap: 10px;
-          width: 100%;
-          height: 50px;
-          border-radius: 10px;
-          background: rgba(255,255,255,0.07);
-          border: 0.5px solid rgba(255,255,255,0.14);
-          color: rgba(255,255,255,0.85);
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14px;
-          font-weight: 500;
           cursor: pointer;
-          transition: background 0.2s, border-color 0.2s, transform 0.15s;
-          position: relative;
-          overflow: hidden;
+          transition: transform 140ms ease, background 160ms ease, border-color 160ms ease;
         }
-        .hb-google-btn::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: linear-gradient(90deg,
-            rgba(29,158,117,0) 0%,
-            rgba(29,158,117,0.12) 50%,
-            rgba(29,158,117,0) 100%);
-          opacity: 0;
-          transition: opacity 0.3s;
-        }
-        .hb-google-btn:not(:disabled):hover {
-          background: rgba(255,255,255,0.11);
-          border-color: rgba(255,255,255,0.22);
+        .hb-google-btn:hover:not(:disabled) {
           transform: translateY(-1px);
-        }
-        .hb-google-btn:not(:disabled):hover::after {
-          opacity: 1;
-        }
-        .hb-google-btn:not(:disabled):active {
-          transform: translateY(0) scale(0.99);
+          border-color: rgba(255, 255, 255, 0.26);
+          background: rgba(255, 255, 255, 0.12);
         }
         .hb-google-btn:disabled {
+          opacity: 0.58;
           cursor: not-allowed;
-          opacity: 0.5;
         }
 
-        /* Divider */
         .hb-divider {
+          margin: 1.35rem 0;
           display: flex;
           align-items: center;
-          gap: 12px;
-          margin: 1.5rem 0;
+          gap: 0.65rem;
         }
         .hb-divider-line {
           flex: 1;
-          height: 0.5px;
-          background: rgba(255,255,255,0.08);
+          height: 1px;
+          background: rgba(255, 255, 255, 0.09);
         }
         .hb-divider-text {
-          font-size: 11px;
-          color: rgba(255,255,255,0.22);
+          font-size: 0.7rem;
+          color: rgba(255, 255, 255, 0.32);
         }
 
-        /* Footer note */
         .hb-note {
-          font-size: 12px;
-          color: rgba(255,255,255,0.22);
+          margin: 0;
           text-align: center;
-          line-height: 1.65;
+          line-height: 1.7;
+          font-size: 0.78rem;
+          color: rgba(255, 255, 255, 0.35);
         }
         .hb-note span {
-          color: rgba(29,158,117,0.65);
+          color: rgba(36, 171, 130, 0.72);
+          font-weight: 500;
         }
 
-        /* Responsive */
-        @media (max-width: 768px) {
-          .hb-page { flex-direction: column; }
-          .hb-left  { padding: 2rem 1.5rem 1.5rem; }
-          .hb-right { width: 100%; border-left: none; border-top: 0.5px solid rgba(255,255,255,0.08); padding: 2rem 1.5rem; }
-          .hb-hero  { padding-bottom: 1rem; }
+        @media (max-width: 1024px) {
+          .hb-page {
+            grid-template-columns: 1fr;
+          }
+          .hb-left {
+            padding: 1.35rem 1.05rem 0.8rem;
+          }
+          .hb-left-inner {
+            min-height: auto;
+            max-width: 100%;
+          }
+          .hb-hero {
+            margin: 1.25rem 0 0.5rem;
+            padding: 0;
+          }
+          .hb-desc {
+            max-width: 60ch;
+          }
+          .hb-right {
+            border-left: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1.1rem 1rem 1.6rem;
+          }
+          .hb-right-inner {
+            max-width: 560px;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .hb-title {
+            font-size: clamp(2rem, 8vw, 2.8rem);
+          }
+          .hb-features {
+            gap: 0.9rem;
+          }
+          .hb-right-title {
+            font-size: 1.7rem;
+          }
         }
       `}</style>
 
       <main className="hb-page">
-        {/* ── LEFT: Hero ── */}
         <section className="hb-left">
-          <div className="hb-logo-row">
-            <div className="hb-logo-dot" />
-            <span className="hb-logo-text">Harbill</span>
-          </div>
+          <div className="hb-left-inner">
+            <div className="hb-logo-row">
+              <div className="hb-logo-dot" />
+              <span className="hb-logo-text">Harbill</span>
+            </div>
 
-          <div className="hb-hero">
-            <p className="hb-eyebrow">Bill Management System</p>
-            <h1 className="hb-title">
-              จัดการบิล<br />
-              อย่าง<span className="hb-title-accent">เป็นระเบียบ</span>
-            </h1>
-            <p className="hb-desc">
-              ระบบหารบิลที่ปลอดภัย เข้าถึงได้เฉพาะบัญชี Google
-              ที่ได้รับอนุญาต พร้อมจัดการข้อมูลแยกตามผู้ใช้
-            </p>
-            <div className="hb-features">
-              {[
-                ["Access",   "Google Only"],
-                ["Security", "Verified Auth"],
-                ["Data",     "Per Account"],
-              ].map(([label, val]) => (
-                <div key={label} className="hb-feat">
-                  <p className="hb-feat-label">{label}</p>
-                  <p className="hb-feat-val">{val}</p>
-                </div>
-              ))}
+            <div className="hb-hero">
+              <p className="hb-eyebrow">Bill Management System</p>
+              <h1 className="hb-title">
+                จัดการบิล
+                <br />
+                อย่าง<span className="hb-title-accent">เป็นระเบียบ</span>
+              </h1>
+              <p className="hb-desc">
+                ระบบหารบิลที่ปลอดภัย เข้าถึงได้เฉพาะบัญชี Google ที่ได้รับอนุญาต พร้อมจัดการข้อมูลแยกตามผู้ใช้
+              </p>
+              <div className="hb-features">
+                {[
+                  ["Access", "Google Only"],
+                  ["Security", "Verified Auth"],
+                  ["Data", "Per Account"],
+                ].map(([label, val]) => (
+                  <div key={label} className="hb-feat">
+                    <p className="hb-feat-label">{label}</p>
+                    <p className="hb-feat-val">{val}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
 
-        {/* ── RIGHT: Login card ── */}
         <section className="hb-right">
-          <div className="hb-status-chip">
-            <span className="hb-pulse" />
-            ระบบพร้อมใช้งาน
+          <div className="hb-right-inner">
+            <div className="hb-status-chip">
+              <span className="hb-pulse" />
+              ระบบพร้อมใช้งาน
+            </div>
+
+            <p className="hb-right-eyebrow">Harbill Account</p>
+            <h2 className="hb-right-title">เข้าสู่ระบบ</h2>
+            <p className="hb-right-sub">
+              ใช้บัญชี Google ที่ได้รับอนุญาตเพื่อเข้าใช้งานระบบ
+            </p>
+
+            {error && <div className="hb-error">{error}</div>}
+
+            <button onClick={googleLogin} disabled={loading} className="hb-google-btn">
+              {googleIcon}
+              {loading ? "กำลังตรวจสอบระบบ..." : "เข้าสู่ระบบด้วย Google"}
+            </button>
+
+            <div className="hb-divider">
+              <div className="hb-divider-line" />
+              <span className="hb-divider-text">หรือ</span>
+              <div className="hb-divider-line" />
+            </div>
+
+            <p className="hb-note">
+              การเข้าสู่ระบบด้วยอีเมลและรหัสผ่าน
+              <br />
+              <span>ถูกปิดใช้งานแล้ว</span>
+            </p>
           </div>
-
-          <p className="hb-right-eyebrow">Harbill Account</p>
-          <h2 className="hb-right-title">เข้าสู่ระบบ</h2>
-          <p className="hb-right-sub">
-            ใช้บัญชี Google ที่ได้รับอนุญาตเพื่อเข้าใช้งานระบบ
-          </p>
-
-          {error && (
-            <div className="hb-error">{error}</div>
-          )}
-
-          <button
-            onClick={googleLogin}
-            disabled={loading}
-            className="hb-google-btn"
-          >
-            {googleIcon}
-            {loading ? "กำลังตรวจสอบระบบ..." : "เข้าสู่ระบบด้วย Google"}
-          </button>
-
-          <div className="hb-divider">
-            <div className="hb-divider-line" />
-            <span className="hb-divider-text">หรือ</span>
-            <div className="hb-divider-line" />
-          </div>
-
-          <p className="hb-note">
-            การเข้าสู่ระบบด้วยอีเมลและรหัสผ่าน<br />
-            <span>ถูกปิดใช้งานแล้ว</span>
-          </p>
         </section>
       </main>
     </>
