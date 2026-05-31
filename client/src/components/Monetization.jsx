@@ -172,11 +172,12 @@ export function SupportCard({ className = "" }) {
       {showQr && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
           <div className="w-full max-w-xs rounded-2xl border border-white/10 bg-[#181827] p-5 text-center shadow-2xl">
-            <p className="text-sm font-semibold text-white">สนับสนุน Harbill</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300/80">Official PromptPay</p>
+            <p className="mt-1 text-sm font-semibold text-white">สนับสนุน Harbill</p>
             <p className="mt-1 text-xs text-gray-400">
               {supportAmount ? `สแกนจ่าย ฿${supportAmount.toFixed(2)}` : "สแกนแล้วกรอกยอดเอง"}
             </p>
-            <div className="mx-auto mt-4 w-fit rounded-2xl bg-white p-3">
+            <div className="mx-auto mt-4 w-fit rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
               {qrUrl ? (
                 <div className="relative">
                   <img src={qrUrl} alt="PromptPay QR สนับสนุน Harbill" className="h-48 w-48" />
@@ -186,6 +187,7 @@ export function SupportCard({ className = "" }) {
                 <div className="flex h-48 w-48 items-center justify-center text-xs text-slate-500">กำลังสร้าง QR...</div>
               )}
             </div>
+            <p className="mt-2 text-[10px] text-gray-500">PromptPay: {supportPromptpay}</p>
             <button
               type="button"
               onClick={() => setShowQr(false)}

@@ -1075,6 +1075,7 @@ function buildSummaryText() {
                         type="number"
                         value={receiptTotal}
                         onChange={e => setReceiptTotal(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()}
                     />
                 </div>
                 {hasReceiptTotal && (
@@ -1099,6 +1100,7 @@ function buildSummaryText() {
                         type="number"
                         value={discountAmount}
                         onChange={e => setDiscountAmount(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()}
                     />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -1465,10 +1467,14 @@ function buildSummaryText() {
       </div>
       {qrCodes[name] && (
         <div className="px-4 pb-4">
-          <div className="bg-white rounded-xl p-3 text-center">
-            <img src={qrCodes[name]} alt={`QR พร้อมเพย์ ${name}`} className="w-40 h-40 mx-auto" />
-            <p className="text-[11px] text-gray-700 mt-2 font-semibold">พร้อมเพย์ {ownerPayment.promptpay}</p>
-            <p className="text-[11px] text-gray-500">สแกนเพื่อจ่าย ฿{amount.toFixed(2)}</p>
+          <div className="rounded-xl border border-slate-300 bg-white p-3 text-center shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">PromptPay Payment</p>
+            <div className="mx-auto mt-2 w-fit rounded-lg border border-slate-200 p-2">
+              <img src={qrCodes[name]} alt={`QR พร้อมเพย์ ${name}`} className="w-40 h-40 mx-auto" />
+            </div>
+            <p className="mt-2 text-xs font-semibold text-slate-700">พร้อมเพย์ {ownerPayment.promptpay}</p>
+            <p className="text-[11px] text-slate-500">สแกนเพื่อจ่าย ฿{amount.toFixed(2)}</p>
+            <p className="mt-1 text-[10px] text-slate-400">Ref: Harbill</p>
           </div>
         </div>
       )}

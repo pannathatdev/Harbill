@@ -278,6 +278,7 @@ export default function FriendsPage() {
                       placeholder="ชื่อที่แสดง เช่น บัญชีสมชาย"
                       value={payForm.display_name}
                       onChange={e => setPayForm(p => ({ ...p, display_name: e.target.value }))}
+                      onKeyDown={e => e.key === "Enter" && savePayment()}
                     />
 
                     <select
@@ -295,6 +296,7 @@ export default function FriendsPage() {
                         placeholder="เลขบัญชี เช่น 123-4-56789-0"
                         value={payForm.account_number}
                         onChange={e => setPayForm(p => ({ ...p, account_number: e.target.value }))}
+                        onKeyDown={e => e.key === "Enter" && savePayment()}
                       />
                     )}
 
@@ -303,6 +305,7 @@ export default function FriendsPage() {
                       placeholder="เบอร์พร้อมเพย์ (ถ้ามี)"
                       value={payForm.promptpay}
                       onChange={e => setPayForm(p => ({ ...p, promptpay: e.target.value }))}
+                      onKeyDown={e => e.key === "Enter" && savePayment()}
                     />
 
                     <div className="flex gap-2 pt-1">
