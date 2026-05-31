@@ -47,6 +47,10 @@ export default function HistoryPage({ onEditRound }) {
           }
         />
         <div className="space-y-4">
+            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
+                <p className="text-sm font-semibold text-emerald-200">ทริปหน้าใช้ Harbill ต่อได้เลย</p>
+                <p className="mt-1 text-xs text-emerald-100/70">กลับมาเปิดรอบใหม่ได้ทันที และใช้รายชื่อเดิมซ้ำได้</p>
+            </div>
             {rounds.length === 0
                 ? <div className="bg-[#1c1c2e] rounded-2xl p-8 text-center text-gray-700 text-sm">ยังไม่มีประวัติ</div>
                 : rounds.map(r => {

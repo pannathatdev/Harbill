@@ -295,6 +295,13 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
         ctx.font = "500 24px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
         ctx.fillText(`โอนเข้า ${ownerName}`, canvas.width / 2, 742)
         ctx.fillText(round.name, canvas.width / 2, 790)
+        ctx.save()
+        ctx.globalAlpha = 0.16
+        ctx.fillStyle = "#0f172a"
+        ctx.textAlign = "right"
+        ctx.font = "700 24px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        ctx.fillText("Harbill", canvas.width - 30, canvas.height - 36)
+        ctx.restore()
 
         return canvas
     }
@@ -894,6 +901,7 @@ function buildSummaryText() {
                     placeholder="เช่น ข้าวเที่ยง, ทริปเขาใหญ่..."
                     value={roundName}
                     onChange={e => setRoundName(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && startRound()}
                 />
             </div>
 
@@ -1020,6 +1028,7 @@ function buildSummaryText() {
                 </label>
                 {scanError && <p className="text-red-400 text-xs mt-2">{scanError}</p>}
                 {scanMessage && <p className="text-emerald-400 text-xs mt-2">{scanMessage}</p>}
+                <p className="mt-2 text-[11px] text-gray-500">บันทึกแล้ว กลับมาใช้ Harbill ทริปถัดไปได้เลย</p>
                 <button
                     type="button"
                     onClick={focusManualAdd}

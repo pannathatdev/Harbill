@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://harbill-sandy.vercel.app/sitemap.xml

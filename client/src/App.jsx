@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useNavigate } from "react-router-dom"
+import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom"
 import { useState, useEffect } from "react"
 import LoginPage from "./components/LoginPage"
 import AuthCallback from "./components/AuthCallback"
@@ -100,6 +100,32 @@ export default function App() {
   const [checking, setChecking] = useState(true)
   const [editRound, setEditRound] = useState(null)
   const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    const metaDescription = document.querySelector('meta[name="description"]')
+    const map = {
+      "/": {
+        title: "Harbill | แยกบิลทริปง่าย ๆ",
+        description: "แยกบิลทริปกับเพื่อน สแกนสลิป และสรุปยอดพร้อม QR ได้ในที่เดียว",
+      },
+      "/friends": {
+        title: "Harbill | รายชื่อเพื่อนและกลุ่ม",
+        description: "จัดการรายชื่อเพื่อนและกลุ่มที่ใช้แยกบิลบ่อย เพื่อเปิดรอบใหม่ได้เร็วขึ้น",
+      },
+      "/history": {
+        title: "Harbill | ประวัติการหารบิล",
+        description: "ดูประวัติรอบก่อนหน้า แก้ไขรายการ และกลับมาเริ่มทริปใหม่ได้ทันที",
+      },
+      "/login": {
+        title: "Harbill | เข้าสู่ระบบ",
+        description: "เข้าสู่ระบบ Harbill ด้วยบัญชี Google เพื่อเริ่มแยกบิลทริป",
+      },
+    }
+    const seo = map[location.pathname] || map["/"]
+    document.title = seo.title
+    if (metaDescription) metaDescription.setAttribute("content", seo.description)
+  }, [location.pathname])
 
   useEffect(() => {
     const token = localStorage.getItem("token")

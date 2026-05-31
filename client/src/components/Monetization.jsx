@@ -178,7 +178,10 @@ export function SupportCard({ className = "" }) {
             </p>
             <div className="mx-auto mt-4 w-fit rounded-2xl bg-white p-3">
               {qrUrl ? (
-                <img src={qrUrl} alt="PromptPay QR สนับสนุน Harbill" className="h-48 w-48" />
+                <div className="relative">
+                  <img src={qrUrl} alt="PromptPay QR สนับสนุน Harbill" className="h-48 w-48" />
+                  <span className="pointer-events-none absolute bottom-1 right-1 rounded bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700/80">Harbill</span>
+                </div>
               ) : (
                 <div className="flex h-48 w-48 items-center justify-center text-xs text-slate-500">กำลังสร้าง QR...</div>
               )}

@@ -16,7 +16,7 @@ export default function LoginPage() {
   const [googleStatus, setGoogleStatus] = useState(null)
 
   useEffect(() => {
-    document.title = "Harbill | ระบบจัดการและหารบิล"
+    document.title = "Harbill | เข้าสู่ระบบ"
 
     const params = new URLSearchParams(window.location.search)
     if (params.get("error")?.startsWith("google")) {
