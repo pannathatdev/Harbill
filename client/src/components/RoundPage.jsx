@@ -269,39 +269,62 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
         const qrImage = await loadImage(qrCodes[name])
         const canvas = document.createElement("canvas")
         canvas.width = 720
-        canvas.height = 900
+        canvas.height = 1040
         const ctx = canvas.getContext("2d")
 
-        ctx.fillStyle = "#ffffff"
+        ctx.fillStyle = "#eef3f9"
         ctx.fillRect(0, 0, canvas.width, canvas.height)
-        ctx.fillStyle = "#101827"
+
+        ctx.fillStyle = "#ffffff"
+        ctx.beginPath()
+        ctx.roundRect(52, 52, 616, 888, 34)
+        ctx.fill()
+
+        ctx.fillStyle = "#173f7a"
+        ctx.beginPath()
+        ctx.roundRect(52, 52, 616, 150, 34)
+        ctx.fill()
+        ctx.fillRect(52, 150, 616, 54)
+
         ctx.textAlign = "center"
         ctx.textBaseline = "top"
 
-        ctx.font = "700 44px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        drawCenteredText(ctx, name, canvas.width / 2, 56, 600, 54)
-
-        ctx.font = "700 72px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        ctx.fillStyle = "#6d28d9"
-        ctx.fillText(`฿${amount.toFixed(2)}`, canvas.width / 2, 145)
-
-        ctx.drawImage(qrImage, 160, 250, 400, 400)
-
-        ctx.fillStyle = "#111827"
-        ctx.font = "700 28px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        ctx.fillText(`พร้อมเพย์ ${ownerPayment.promptpay}`, canvas.width / 2, 700)
-
-        ctx.fillStyle = "#4b5563"
-        ctx.font = "500 24px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        ctx.fillText(`โอนเข้า ${ownerName}`, canvas.width / 2, 742)
-        ctx.fillText(round.name, canvas.width / 2, 790)
-        ctx.save()
-        ctx.globalAlpha = 0.16
-        ctx.fillStyle = "#0f172a"
-        ctx.textAlign = "right"
+        ctx.fillStyle = "#ffffff"
+        ctx.font = "800 42px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        ctx.fillText("PromptPay", canvas.width / 2, 82)
         ctx.font = "700 24px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        ctx.fillText("Harbill", canvas.width - 30, canvas.height - 36)
-        ctx.restore()
+        ctx.fillText("Thai QR Payment", canvas.width / 2, 134)
+
+        ctx.fillStyle = "#f8fafc"
+        ctx.beginPath()
+        ctx.roundRect(98, 244, 524, 524, 24)
+        ctx.fill()
+        ctx.strokeStyle = "#dbe4ef"
+        ctx.lineWidth = 3
+        ctx.stroke()
+        ctx.drawImage(qrImage, 126, 272, 468, 468)
+
+        ctx.fillStyle = "#0f172a"
+        ctx.font = "800 46px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        ctx.fillText(`THB ${amount.toFixed(2)}`, canvas.width / 2, 790)
+
+        ctx.fillStyle = "#173f7a"
+        ctx.font = "700 28px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        drawCenteredText(ctx, name, canvas.width / 2, 850, 520, 34)
+
+        ctx.fillStyle = "#475569"
+        ctx.font = "600 22px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        ctx.fillText(`PromptPay ${ownerPayment.promptpay}`, canvas.width / 2, 912)
+        ctx.font = "500 20px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        drawCenteredText(ctx, `Pay to ${ownerName} · ${round.name}`, canvas.width / 2, 946, 560, 28)
+
+        ctx.fillStyle = "#dbeafe"
+        ctx.beginPath()
+        ctx.roundRect(230, 972, 260, 40, 20)
+        ctx.fill()
+        ctx.fillStyle = "#1e3a8a"
+        ctx.font = "800 18px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        ctx.fillText("Harbill Ref", canvas.width / 2, 982)
 
         return canvas
     }
@@ -876,9 +899,9 @@ function buildSummaryText() {
                 const payload = buildPromptPayPayload(ownerPayment.promptpay, amount)
                 if (!payload) continue
                 next[name] = await QRCode.default.toDataURL(payload, {
-                    errorCorrectionLevel: "M",
-                    margin: 1,
-                    width: 180,
+                    errorCorrectionLevel: "H",
+                    margin: 4,
+                    width: 320,
                 })
             }
 
@@ -1467,14 +1490,21 @@ function buildSummaryText() {
       </div>
       {qrCodes[name] && (
         <div className="px-4 pb-4">
-          <div className="rounded-xl border border-slate-300 bg-white p-3 text-center shadow-sm">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">PromptPay Payment</p>
-            <div className="mx-auto mt-2 w-fit rounded-lg border border-slate-200 p-2">
-              <img src={qrCodes[name]} alt={`QR พร้อมเพย์ ${name}`} className="w-40 h-40 mx-auto" />
+          <div className="overflow-hidden rounded-xl border border-slate-300 bg-white text-center shadow-sm">
+            <div className="bg-[#173f7a] px-3 py-3 text-white">
+              <p className="text-base font-extrabold leading-none">PromptPay</p>
+              <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-blue-100">Thai QR Payment</p>
             </div>
-            <p className="mt-2 text-xs font-semibold text-slate-700">พร้อมเพย์ {ownerPayment.promptpay}</p>
-            <p className="text-[11px] text-slate-500">สแกนเพื่อจ่าย ฿{amount.toFixed(2)}</p>
-            <p className="mt-1 text-[10px] text-slate-400">Ref: Harbill</p>
+            <div className="p-3">
+              <div className="mx-auto w-fit rounded-xl border border-slate-200 bg-slate-50 p-2">
+                <img src={qrCodes[name]} alt={`QR พร้อมเพย์ ${name}`} className="h-48 w-48 mx-auto" />
+              </div>
+              <p className="mt-3 text-xl font-extrabold text-slate-900">฿{amount.toFixed(2)}</p>
+              <p className="mt-1 truncate text-sm font-bold text-blue-900">{name}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-700">พร้อมเพย์ {ownerPayment.promptpay}</p>
+              <p className="text-[11px] text-slate-500">โอนเข้า {ownerName} · {round.name}</p>
+              <p className="mx-auto mt-2 w-fit rounded-full bg-blue-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-blue-800">Harbill Ref</p>
+            </div>
           </div>
         </div>
       )}
