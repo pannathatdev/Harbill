@@ -236,6 +236,20 @@ async function notifyTelegram(text) {
   }
 }
 
+function formatAdminTime(date = new Date()) {
+  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "long",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZoneName: "short"
+  }).format(date)
+}
+
 async function ensureAiUsageSchema() {
   if (aiUsageSchemaReady) return
 
@@ -677,12 +691,12 @@ app.post("/admin/pro/activate", requireAuth, requireAdmin, async (req, res) => {
   if (!rows[0]) return res.status(404).json({ error: "User not found" })
 
   await notifyTelegram([
-    "Harbill Pro activated by admin",
-    `Admin: ${req.user.email || "-"}`,
-    `User: ${rows[0].name || "-"} (${rows[0].email || "-"})`,
-    `Days: ${days}`,
-    `Pro until: ${rows[0].pro_until || "-"}`,
-    `Time: ${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`
+    "เปิด Harbill Pro โดยแอดมิน",
+    `แอดมิน: ${req.user.email || "-"}`,
+    `ผู้ใช้: ${rows[0].name || "-"} (${rows[0].email || "-"})`,
+    `จำนวนวัน: ${days}`,
+    `หมดอายุ: ${rows[0].pro_until ? formatAdminTime(new Date(rows[0].pro_until)) : "-"}`,
+    `เวลา: ${formatAdminTime()}`
   ].join("\n"))
 
   res.json({ ok: true, user: { ...rows[0], isPro: userPlan(rows[0]).isPro } })
@@ -700,12 +714,12 @@ app.post("/billing/pro/request", requireAuth, async (req, res) => {
   const reference = String(req.body.reference || "").trim()
 
   const notificationSent = await notifyTelegram([
-    "Harbill Pro payment request",
-    `User: ${req.user.name || "-"} (${req.user.email || "-"})`,
-    `Days: ${days}`,
-    `Reference: ${reference || "-"}`,
-    "Status: waiting for manual verification",
-    `Time: ${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`
+    "คำขอแจ้งโอน Harbill Pro",
+    `ผู้ใช้: ${req.user.name || "-"} (${req.user.email || "-"})`,
+    `จำนวนวัน: ${days}`,
+    `เลขอ้างอิง: ${reference || "-"}`,
+    "สถานะ: รอตรวจสอบยอดโอน",
+    `เวลา: ${formatAdminTime()}`
   ].join("\n"))
 
   res.json({ ok: true, reference, notificationSent, status: "pending" })
@@ -727,12 +741,12 @@ app.post("/billing/pro/mock-activate", requireAuth, async (req, res) => {
 
   const [rows] = await db.query("SELECT plan, pro_until FROM users WHERE id=?", [req.user.id])
   const notificationSent = await notifyTelegram([
-    "Harbill Pro activated",
-    `User: ${req.user.name || "-"} (${req.user.email || "-"})`,
-    `Days: ${days}`,
-    `Reference: ${reference || "-"}`,
-    `Pro until: ${rows[0]?.pro_until || "-"}`,
-    `Time: ${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`
+    "เปิด Harbill Pro แล้ว",
+    `ผู้ใช้: ${req.user.name || "-"} (${req.user.email || "-"})`,
+    `จำนวนวัน: ${days}`,
+    `เลขอ้างอิง: ${reference || "-"}`,
+    `หมดอายุ: ${rows[0]?.pro_until ? formatAdminTime(new Date(rows[0].pro_until)) : "-"}`,
+    `เวลา: ${formatAdminTime()}`
   ].join("\n"))
 
   res.json({ ok: true, reference, notificationSent, ...userPlan(rows[0]) })

@@ -167,6 +167,9 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     const [scanning, setScanning] = useState(false)
     const [scanError, setScanError] = useState("")
     const [scanMessage, setScanMessage] = useState("")
+    const [savingAction, setSavingAction] = useState("")
+    const [friendsLoading, setFriendsLoading] = useState(true)
+    const [qrBuilding, setQrBuilding] = useState(false)
     const [editingItemId, setEditingItemId] = useState(null)
     const [editingName, setEditingName] = useState("")
     const [editingPrice, setEditingPrice] = useState("")
@@ -221,9 +224,14 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     }, [initialRound])
 
     async function loadFriends() {
-        const [f, g] = await Promise.all([api.getFriends(), api.getGroups()])
-        setFriends(f)
-        setGroups(g)
+        setFriendsLoading(true)
+        try {
+            const [f, g] = await Promise.all([api.getFriends(), api.getGroups()])
+            setFriends(f)
+            setGroups(g)
+        } finally {
+            setFriendsLoading(false)
+        }
     }
 
     function safeFileName(value) {
@@ -486,13 +494,18 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
 
     async function startRound() {
         if (selected.length === 0) return alert("เลือกคนร่วมรอบก่อนนะครับ")
-        const r = await api.createRound(roundName || "รอบใหม่", selected)
-        setRound(r)
-        setItems([])
-        setReceiptTotal("")
-        setDiscountAmount("")
-        setShowPromptpayForm(false)
-        setStep("items")
+        setSavingAction("start")
+        try {
+            const r = await api.createRound(roundName || "รอบใหม่", selected)
+            setRound(r)
+            setItems([])
+            setReceiptTotal("")
+            setDiscountAmount("")
+            setShowPromptpayForm(false)
+            setStep("items")
+        } finally {
+            setSavingAction("")
+        }
     }
 
     async function handleScan(e) {
@@ -535,9 +548,14 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
         const name = manualName.trim()
         const price = parseFloat(manualPrice)
         if (!name || isNaN(price)) return
-        await addItemToRound(name, price, selected)
-        setManualName("")
-        setManualPrice("")
+        setSavingAction("manual")
+        try {
+            await addItemToRound(name, price, selected)
+            setManualName("")
+            setManualPrice("")
+        } finally {
+            setSavingAction("")
+        }
     }
 
     function focusManualAdd() {
@@ -604,15 +622,20 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
         const ownerName = user?.name || "เจ้าของบิล"
         const promptpay = ownerPromptpay.trim()
         const existing = paymentInfo[ownerName] || {}
-        await api.savePaymentInfo({
-            friend_name: ownerName,
-            bank_name: existing.bank_name || "พร้อมเพย์อย่างเดียว",
-            account_number: existing.account_number || "",
-            promptpay,
-            display_name: existing.display_name || ownerName
-        })
-        await loadPaymentInfo()
-        setShowPromptpayForm(false)
+        setSavingAction("promptpay")
+        try {
+            await api.savePaymentInfo({
+                friend_name: ownerName,
+                bank_name: existing.bank_name || "พร้อมเพย์อย่างเดียว",
+                account_number: existing.account_number || "",
+                promptpay,
+                display_name: existing.display_name || ownerName
+            })
+            await loadPaymentInfo()
+            setShowPromptpayForm(false)
+        } finally {
+            setSavingAction("")
+        }
     }
 
     // เพิ่มเพื่อนใหม่ inline แล้วเพิ่มเข้ารอบเลย
@@ -625,9 +648,14 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     }
 
     async function finishRound() {
-        await api.closeRound(round.id)
-        api.clearCache()
-        setStep("summary")
+        setSavingAction("finish")
+        try {
+            await api.closeRound(round.id)
+            api.clearCache(["/rounds"])
+            setStep("summary")
+        } finally {
+            setSavingAction("")
+        }
     }
 
     function resetRound() {
@@ -901,24 +929,30 @@ function buildSummaryText() {
         async function buildQrCodes() {
             if (step !== "summary" || !ownerPayment?.promptpay) {
                 setQrCodes({})
+                setQrBuilding(false)
                 return
             }
 
-            const QRCode = await import("qrcode")
-            const next = {}
-            for (const name of selected) {
-                const amount = totals[name] || 0
-                if (amount <= 0) continue
-                const payload = buildPromptPayPayload(ownerPayment.promptpay, amount)
-                if (!payload) continue
-                next[name] = await QRCode.default.toDataURL(payload, {
-                    errorCorrectionLevel: "H",
-                    margin: 4,
-                    width: 320,
-                })
-            }
+            setQrBuilding(true)
+            try {
+                const QRCode = await import("qrcode")
+                const next = {}
+                for (const name of selected) {
+                    const amount = totals[name] || 0
+                    if (amount <= 0) continue
+                    const payload = buildPromptPayPayload(ownerPayment.promptpay, amount)
+                    if (!payload) continue
+                    next[name] = await QRCode.default.toDataURL(payload, {
+                        errorCorrectionLevel: "H",
+                        margin: 4,
+                        width: 320,
+                    })
+                }
 
-            if (!cancelled) setQrCodes(next)
+                if (!cancelled) setQrCodes(next)
+            } finally {
+                if (!cancelled) setQrBuilding(false)
+            }
         }
 
         buildQrCodes()
@@ -941,7 +975,13 @@ function buildSummaryText() {
                 />
             </div>
 
-            {groups.length > 0 && (
+            {friendsLoading && (
+                <div className="rounded-2xl bg-[#1c1c2e] p-5 text-center text-sm text-gray-500">
+                    กำลังโหลดเพื่อนและกลุ่ม...
+                </div>
+            )}
+
+            {!friendsLoading && groups.length > 0 && (
                 <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-2">
                     <p className="text-xs text-gray-500">ดึงจากกลุ่ม</p>
                     <div className="flex flex-wrap gap-2">
@@ -974,7 +1014,9 @@ function buildSummaryText() {
                         <PlusIcon />
                     </button>
                 </div>
-                {friends.length === 0
+                {friendsLoading
+                    ? <p className="text-sm text-gray-700 text-center py-2">กำลังโหลดรายชื่อ...</p>
+                    : friends.length === 0
                     ? <p className="text-sm text-gray-700 text-center py-2">พิมพ์ชื่อด้านบนเพื่อเพิ่มคนเข้ารอบได้เลย</p>
                     : <div className="flex flex-wrap gap-2">
                         {friends.map(f => {
@@ -997,9 +1039,11 @@ function buildSummaryText() {
                 )}
             </div>
 
-            <button onClick={startRound}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-2xl text-sm font-semibold">
-                เริ่มรอบนี้ →
+            <button
+                onClick={startRound}
+                disabled={savingAction === "start" || friendsLoading}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-2xl text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
+                {savingAction === "start" ? "กำลังเริ่มรอบ..." : "เริ่มรอบนี้ →"}
             </button>
         </div>
     )
@@ -1012,9 +1056,11 @@ function buildSummaryText() {
                     <h1 className="text-lg font-semibold">{round.name}</h1>
                     <p className="text-xs text-gray-600">{selected.join(", ")}</p>
                 </div>
-                <button onClick={finishRound}
-                    className="bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded-xl text-sm font-medium">
-                    สรุปยอด →
+                <button
+                    onClick={finishRound}
+                    disabled={savingAction === "finish"}
+                    className="bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded-xl text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60">
+                    {savingAction === "finish" ? "กำลังสรุป..." : "สรุปยอด →"}
                 </button>
             </div>
 
@@ -1047,9 +1093,11 @@ function buildSummaryText() {
                             onChange={e => setOwnerPromptpay(e.target.value)}
                             onKeyDown={e => e.key === "Enter" && saveOwnerPromptpay()}
                         />
-                        <button onClick={saveOwnerPromptpay}
-                            className="bg-emerald-600 hover:bg-emerald-500 px-3 rounded-xl text-sm font-medium">
-                            บันทึก
+                        <button
+                            onClick={saveOwnerPromptpay}
+                            disabled={savingAction === "promptpay"}
+                            className="bg-emerald-600 hover:bg-emerald-500 px-3 rounded-xl text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60">
+                            {savingAction === "promptpay" ? "กำลัง..." : "บันทึก"}
                         </button>
                     </div>
                 )}
@@ -1095,8 +1143,12 @@ function buildSummaryText() {
                         onChange={e => setManualPrice(e.target.value)}
                         onKeyDown={e => e.key === "Enter" && addManual()}
                     />
-                    <button onClick={addManual}
-                        className="bg-emerald-600 hover:bg-emerald-500 px-3 rounded-xl text-sm font-medium">+</button>
+                    <button
+                        onClick={addManual}
+                        disabled={savingAction === "manual"}
+                        className="bg-emerald-600 hover:bg-emerald-500 px-3 rounded-xl text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60">
+                        {savingAction === "manual" ? "..." : "+"}
+                    </button>
                 </div>
             </div>
 
@@ -1339,15 +1391,22 @@ function buildSummaryText() {
                 <button
                     onClick={copyAllQrImages}
                     title="คัดลอก QR ทุกคน"
-                    className={`flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold transition-all ${copiedQr
+                    disabled={qrBuilding}
+                    className={`flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${copiedQr
                         ? "bg-purple-800 text-purple-100"
                         : "bg-purple-600 hover:bg-purple-500 text-white"
                         }`}
                 >
                     <ImageCopyIcon />
-                    <span>{copiedQr ? "คัดลอก QR แล้ว" : "คัดลอก QR"}</span>
+                    <span>{qrBuilding ? "กำลังสร้าง QR..." : copiedQr ? "คัดลอก QR แล้ว" : "คัดลอก QR"}</span>
                 </button>
             </div>
+
+            {qrBuilding && ownerPayment?.promptpay && (
+                <div className="rounded-2xl border border-purple-500/20 bg-purple-500/10 px-4 py-3 text-center text-sm text-purple-100">
+                    กำลังเตรียม QR สำหรับแต่ละคน...
+                </div>
+            )}
 
             {!isPro && (
                 <>

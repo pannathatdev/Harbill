@@ -84,6 +84,8 @@ export default function FriendsPage() {
   const [payForm, setPayForm] = useState({
     bank_name: "", account_number: "", promptpay: "", display_name: ""
   })
+  const [loading, setLoading] = useState(true)
+  const [busyAction, setBusyAction] = useState("")
   const promptpayInputRef = useRef(null)
 
   useEffect(() => { load() }, [])
@@ -93,22 +95,32 @@ export default function FriendsPage() {
   }, [editPayment])
 
   async function load() {
-    const [f, g, p] = await Promise.all([
-      api.getFriends(), api.getGroups(), api.getPaymentInfo()
-    ])
-    setFriends(f)
-    setGroups(g)
-    const pm = {}
-    p.forEach(item => pm[item.friend_name] = item)
-    setPaymentInfo(pm)
+    setLoading(true)
+    try {
+      const [f, g, p] = await Promise.all([
+        api.getFriends(), api.getGroups(), api.getPaymentInfo()
+      ])
+      setFriends(f)
+      setGroups(g)
+      const pm = {}
+      p.forEach(item => pm[item.friend_name] = item)
+      setPaymentInfo(pm)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function addFriend() {
     const name = friendInput.trim()
     if (!name) return
-    await api.addFriend(name)
-    setFriendInput("")
-    load()
+    setBusyAction("friend")
+    try {
+      await api.addFriend(name)
+      setFriendInput("")
+      await load()
+    } finally {
+      setBusyAction("")
+    }
   }
 
   async function deleteFriend(id) {
@@ -119,9 +131,14 @@ export default function FriendsPage() {
   async function addGroup() {
     const name = groupInput.trim()
     if (!name) return
-    await api.addGroup(name)
-    setGroupInput("")
-    load()
+    setBusyAction("group")
+    try {
+      await api.addGroup(name)
+      setGroupInput("")
+      await load()
+    } finally {
+      setBusyAction("")
+    }
   }
 
   async function deleteGroup(id) {
@@ -182,15 +199,20 @@ export default function FriendsPage() {
   async function savePayment() {
     const promptpay = payForm.promptpay.trim()
     const bankName = payForm.bank_name || (promptpay ? "พร้อมเพย์อย่างเดียว" : "")
-    await api.savePaymentInfo({
-      friend_name: editPayment,
-      ...payForm,
-      bank_name: bankName,
-      account_number: bankName === "พร้อมเพย์อย่างเดียว" ? "" : payForm.account_number,
-      promptpay
-    })
-    setEditPayment(null)
-    load()
+    setBusyAction(`payment:${editPayment}`)
+    try {
+      await api.savePaymentInfo({
+        friend_name: editPayment,
+        ...payForm,
+        bank_name: bankName,
+        account_number: bankName === "พร้อมเพย์อย่างเดียว" ? "" : payForm.account_number,
+        promptpay
+      })
+      setEditPayment(null)
+      await load()
+    } finally {
+      setBusyAction("")
+    }
   }
 
   async function deletePayment(name) {
@@ -233,9 +255,14 @@ export default function FriendsPage() {
           </button>
         ))}
       </div>
+      {loading && (
+        <div className="rounded-2xl bg-[#1c1c2e] p-6 text-center text-sm text-gray-500">
+          กำลังโหลดข้อมูล...
+        </div>
+      )}
 
       {/* ── เพื่อน ── */}
-      {view === "friends" && (
+      {!loading && view === "friends" && (
         <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-3">
           <p className="text-xs text-gray-500">รายชื่อเพื่อนทั้งหมด</p>
           <div className="flex gap-2">
@@ -246,9 +273,11 @@ export default function FriendsPage() {
               onChange={e => setFriendInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && addFriend()}
             />
-            <button onClick={addFriend}
-              className="bg-emerald-600 hover:bg-emerald-500 px-4 rounded-xl text-sm font-medium">
-              + เพิ่ม
+            <button
+              onClick={addFriend}
+              disabled={busyAction === "friend"}
+              className="bg-emerald-600 hover:bg-emerald-500 px-4 rounded-xl text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60">
+              {busyAction === "friend" ? "กำลัง..." : "+ เพิ่ม"}
             </button>
           </div>
 
@@ -321,11 +350,12 @@ export default function FriendsPage() {
 
                     <div className="flex gap-2 pt-1">
                       <button onClick={savePayment}
+                        disabled={busyAction === `payment:${editPayment}`}
                         title="บันทึก"
                         aria-label="บันทึก"
-                        className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-lg text-sm font-medium">
+                        className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-lg text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60">
                         <SaveIcon />
-                        <span>บันทึก</span>
+                        <span>{busyAction === `payment:${editPayment}` ? "กำลังบันทึก..." : "บันทึก"}</span>
                       </button>
                       {paymentInfo[f.name] && (
                         <IconButton onClick={() => deletePayment(f.name)} title="ลบบัญชี" className="h-9 w-9 bg-[#13131f] hover:bg-red-600 hover:text-white">
@@ -345,7 +375,7 @@ export default function FriendsPage() {
       )}
 
       {/* ── กลุ่ม ── */}
-      {view === "groups" && (
+      {!loading && view === "groups" && (
         <div className="space-y-3">
           <div className="bg-[#1c1c2e] rounded-2xl p-4">
             <p className="text-xs text-gray-500 mb-3">สร้างกลุ่มใหม่</p>
@@ -357,9 +387,11 @@ export default function FriendsPage() {
                 onChange={e => setGroupInput(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && addGroup()}
               />
-              <button onClick={addGroup}
-                className="bg-emerald-600 hover:bg-emerald-500 px-4 rounded-xl text-sm font-medium">
-                + สร้าง
+              <button
+                onClick={addGroup}
+                disabled={busyAction === "group"}
+                className="bg-emerald-600 hover:bg-emerald-500 px-4 rounded-xl text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60">
+                {busyAction === "group" ? "กำลัง..." : "+ สร้าง"}
               </button>
             </div>
           </div>

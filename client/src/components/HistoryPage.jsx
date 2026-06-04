@@ -33,6 +33,8 @@ export default function HistoryPage({ user, onEditRound }) {
     const [rounds, setRounds] = useState([])
     const [open, setOpen] = useState(null)
     const [totalRounds, setTotalRounds] = useState(0)
+    const [loading, setLoading] = useState(true)
+    const [editingRoundId, setEditingRoundId] = useState(null)
     const navigate = useNavigate()
     const isPro = user?.isPro || user?.plan === "pro"
     const visibleRounds = rounds
@@ -41,18 +43,28 @@ export default function HistoryPage({ user, onEditRound }) {
     useEffect(() => { load() }, [isPro])
 
     async function load() {
-        const result = await api.getRounds({
-            skipCache: true,
-            limit: isPro ? 0 : FREE_HISTORY_LIMIT,
-            meta: true
-        })
-        setRounds(result.rounds || [])
-        setTotalRounds(result.total || 0)
+        setLoading(true)
+        try {
+            const result = await api.getRounds({
+                skipCache: true,
+                limit: isPro ? 0 : FREE_HISTORY_LIMIT,
+                meta: true
+            })
+            setRounds(result.rounds || [])
+            setTotalRounds(result.total || 0)
+        } finally {
+            setLoading(false)
+        }
     }
 
     async function reopenRound(round) {
-        await api.reopenRound(round.id)
-        onEditRound(round)
+        setEditingRoundId(round.id)
+        try {
+            await api.reopenRound(round.id)
+            onEditRound(round)
+        } finally {
+            setEditingRoundId(null)
+        }
     }
     return (
         <>
@@ -88,7 +100,9 @@ export default function HistoryPage({ user, onEditRound }) {
                     </div>
                 </div>
             )}
-            {rounds.length === 0
+            {loading
+                ? <div className="bg-[#1c1c2e] rounded-2xl p-8 text-center text-gray-500 text-sm">กำลังโหลดประวัติ...</div>
+                : rounds.length === 0
                 ? <div className="bg-[#1c1c2e] rounded-2xl p-8 text-center text-gray-700 text-sm">ยังไม่มีประวัติ</div>
                 : visibleRounds.map(r => {
                     const total = r.items.reduce((s, i) => s + i.price, 0)
@@ -172,12 +186,13 @@ r.joiners.forEach(n => {
                                     {/* ปุ่มแก้ไข */}
                                     <button
                                         onClick={() => reopenRound(r)}
+                                        disabled={editingRoundId === r.id}
                                         title="เปิดแก้ไขรอบนี้"
                                         aria-label="เปิดแก้ไขรอบนี้"
-                                        className="w-full inline-flex items-center justify-center gap-2 bg-[#252540] hover:bg-[#2e2e50] py-2.5 rounded-xl text-sm text-gray-300 font-medium"
+                                        className="w-full inline-flex items-center justify-center gap-2 bg-[#252540] hover:bg-[#2e2e50] py-2.5 rounded-xl text-sm text-gray-300 font-medium disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                         <EditIcon />
-                                        <span>เปิดแก้ไขรอบนี้</span>
+                                        <span>{editingRoundId === r.id ? "กำลังเปิดรอบ..." : "เปิดแก้ไขรอบนี้"}</span>
                                     </button>
                                 </div>
                             )}
