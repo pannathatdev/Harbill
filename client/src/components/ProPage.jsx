@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { api } from "../api"
 
 const proPromptpay = import.meta.env.VITE_PRO_PROMPTPAY || import.meta.env.VITE_SUPPORT_PROMPTPAY || "0980106920"
@@ -72,6 +72,7 @@ export default function ProPage({ user, onUserUpdate }) {
   const [reference, setReference] = useState("")
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState("")
+  const requestLockRef = useRef(false)
   const isPro = user?.isPro || user?.plan === "pro"
 
   useEffect(() => {
@@ -94,6 +95,8 @@ export default function ProPage({ user, onUserUpdate }) {
   }, [])
 
   async function requestManualActivation() {
+    if (requestLockRef.current) return
+    requestLockRef.current = true
     setSaving(true)
     setMessage("")
     try {
@@ -105,6 +108,7 @@ export default function ProPage({ user, onUserUpdate }) {
     } catch (error) {
       setMessage(error.message || "ยังส่งแจ้งโอนไม่สำเร็จ")
     } finally {
+      requestLockRef.current = false
       setSaving(false)
     }
   }

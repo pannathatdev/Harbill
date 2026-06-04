@@ -110,6 +110,19 @@ CREATE TABLE IF NOT EXISTS scan_credit_transactions (
   CONSTRAINT fk_scan_credit_transactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS pro_payment_requests (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  days INT NOT NULL,
+  reference VARCHAR(255) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  notification_sent TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_pro_payment_requests_user_created (user_id, created_at),
+  INDEX idx_pro_payment_requests_status_created (status, created_at),
+  CONSTRAINT fk_pro_payment_requests_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS site_visits_daily (
   visit_date DATE NOT NULL,
   visitor_key VARCHAR(128) NOT NULL,

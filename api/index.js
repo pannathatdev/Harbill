@@ -83,6 +83,21 @@ async function ensureMonetizationSchema() {
     await db.query("ALTER TABLE users ADD COLUMN pro_until DATETIME NULL")
   }
 
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS pro_payment_requests (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      days INT NOT NULL,
+      reference VARCHAR(255) NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      notification_sent TINYINT(1) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_pro_payment_requests_user_created (user_id, created_at),
+      INDEX idx_pro_payment_requests_status_created (status, created_at),
+      CONSTRAINT fk_pro_payment_requests_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+
   monetizationSchemaReady = true
 }
 
@@ -712,6 +727,44 @@ app.post("/billing/pro/request", requireAuth, async (req, res) => {
   await ensureMonetizationSchema()
   const days = Math.min(Math.max(Number(req.body.days) || 30, 1), 366)
   const reference = String(req.body.reference || "").trim()
+  const cooldownMinutes = Math.min(Math.max(Number(process.env.PRO_REQUEST_COOLDOWN_MINUTES) || 5, 1), 1440)
+  const dailyLimit = Math.min(Math.max(Number(process.env.PRO_REQUEST_DAILY_LIMIT) || 5, 1), 50)
+
+  const [[recent]] = await db.query(
+    `SELECT id, created_at
+     FROM pro_payment_requests
+     WHERE user_id=?
+       AND created_at >= DATE_SUB(NOW(), INTERVAL ${cooldownMinutes} MINUTE)
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [req.user.id]
+  )
+  if (recent) {
+    return res.status(429).json({
+      error: `ส่งแจ้งโอนล่าสุดไปแล้ว กรุณารอประมาณ ${cooldownMinutes} นาที ก่อนส่งซ้ำครับ`,
+      code: "PRO_REQUEST_COOLDOWN",
+      retryAfterMinutes: cooldownMinutes
+    })
+  }
+
+  const [[today]] = await db.query(
+    `SELECT COUNT(*) total
+     FROM pro_payment_requests
+     WHERE user_id=? AND DATE(created_at)=CURRENT_DATE`,
+    [req.user.id]
+  )
+  if (Number(today?.total || 0) >= dailyLimit) {
+    return res.status(429).json({
+      error: `วันนี้ส่งแจ้งโอนครบ ${dailyLimit} ครั้งแล้วครับ ถ้าโอนแล้วกรุณารอแอดมินตรวจสอบ`,
+      code: "PRO_REQUEST_DAILY_LIMIT",
+      dailyLimit
+    })
+  }
+
+  const [created] = await db.query(
+    "INSERT INTO pro_payment_requests (user_id, days, reference, status) VALUES (?, ?, ?, 'pending')",
+    [req.user.id, days, reference || null]
+  )
 
   const notificationSent = await notifyTelegram([
     "คำขอแจ้งโอน Harbill Pro",
@@ -721,6 +774,11 @@ app.post("/billing/pro/request", requireAuth, async (req, res) => {
     "สถานะ: รอตรวจสอบยอดโอน",
     `เวลา: ${formatAdminTime()}`
   ].join("\n"))
+
+  await db.query(
+    "UPDATE pro_payment_requests SET notification_sent=? WHERE id=?",
+    [notificationSent ? 1 : 0, created.insertId]
+  )
 
   res.json({ ok: true, reference, notificationSent, status: "pending" })
 })
