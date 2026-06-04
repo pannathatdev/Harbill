@@ -110,18 +110,17 @@ CREATE TABLE IF NOT EXISTS scan_credit_transactions (
   CONSTRAINT fk_scan_credit_transactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS page_views (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NULL,
+CREATE TABLE IF NOT EXISTS site_visits_daily (
+  visit_date DATE NOT NULL,
   visitor_key VARCHAR(128) NOT NULL,
-  session_key VARCHAR(128) NULL,
-  path VARCHAR(512) NOT NULL,
+  user_id INT NULL,
   hostname VARCHAR(255) NULL,
-  referrer TEXT NULL,
-  user_agent TEXT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_page_views_created (created_at),
-  INDEX idx_page_views_user_created (user_id, created_at),
-  INDEX idx_page_views_visitor_created (visitor_key, created_at),
-  CONSTRAINT fk_page_views_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+  entry_path VARCHAR(255) NULL,
+  sessions INT NOT NULL DEFAULT 1,
+  first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (visit_date, visitor_key),
+  INDEX idx_site_visits_daily_date (visit_date),
+  INDEX idx_site_visits_daily_host_date (hostname, visit_date),
+  CONSTRAINT fk_site_visits_daily_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

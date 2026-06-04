@@ -100,20 +100,19 @@ async function ensureAnalyticsSchema() {
   if (analyticsSchemaReady) return
 
   await db.query(`
-    CREATE TABLE IF NOT EXISTS page_views (
-      id BIGINT AUTO_INCREMENT PRIMARY KEY,
-      user_id INT NULL,
+    CREATE TABLE IF NOT EXISTS site_visits_daily (
+      visit_date DATE NOT NULL,
       visitor_key VARCHAR(128) NOT NULL,
-      session_key VARCHAR(128) NULL,
-      path VARCHAR(512) NOT NULL,
+      user_id INT NULL,
       hostname VARCHAR(255) NULL,
-      referrer TEXT NULL,
-      user_agent TEXT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_page_views_created (created_at),
-      INDEX idx_page_views_user_created (user_id, created_at),
-      INDEX idx_page_views_visitor_created (visitor_key, created_at),
-      CONSTRAINT fk_page_views_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+      entry_path VARCHAR(255) NULL,
+      sessions INT NOT NULL DEFAULT 1,
+      first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (visit_date, visitor_key),
+      INDEX idx_site_visits_daily_date (visit_date),
+      INDEX idx_site_visits_daily_host_date (hostname, visit_date),
+      CONSTRAINT fk_site_visits_daily_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `)
 
@@ -482,18 +481,20 @@ app.post("/analytics/page-view", optionalAuth, async (req, res) => {
   await ensureAnalyticsSchema()
 
   const visitorKey = String(req.body.visitorKey || "").slice(0, 128)
-  const sessionKey = String(req.body.sessionKey || "").slice(0, 128)
-  const path = String(req.body.path || req.path || "/").slice(0, 512)
+  const entryPath = String(req.body.path || "/").split("?")[0].slice(0, 255)
   const hostname = String(req.body.hostname || req.hostname || "").slice(0, 255)
-  const referrer = String(req.body.referrer || "").slice(0, 2048)
-  const userAgent = String(req.headers["user-agent"] || "").slice(0, 2048)
 
   if (!visitorKey) return res.status(400).json({ error: "Missing visitor key" })
 
-  await db.query(
-    "INSERT INTO page_views (user_id, visitor_key, session_key, path, hostname, referrer, user_agent) VALUES (?,?,?,?,?,?,?)",
-    [req.user?.id || null, visitorKey, sessionKey || null, path, hostname || null, referrer || null, userAgent || null]
-  )
+  await db.query(`
+    INSERT INTO site_visits_daily (visit_date, visitor_key, user_id, hostname, entry_path, sessions)
+    VALUES (CURRENT_DATE, ?, ?, ?, ?, 1)
+    ON DUPLICATE KEY UPDATE
+      user_id=COALESCE(VALUES(user_id), user_id),
+      hostname=COALESCE(VALUES(hostname), hostname),
+      sessions=sessions+1,
+      last_seen=CURRENT_TIMESTAMP
+  `, [visitorKey, req.user?.id || null, hostname || null, entryPath || "/"])
 
   res.json({ ok: true })
 })
@@ -553,6 +554,8 @@ app.get("/admin/summary", requireAuth, requireAdmin, async (req, res) => {
 
   const aiScanCost = Number(process.env.AI_SCAN_COST_THB || 0)
   const serverMonthlyCost = Number(process.env.SERVER_MONTHLY_COST_THB || 0)
+  const freeScanDailyLimit = Number(process.env.FREE_SCAN_DAILY_LIMIT || 5)
+  const dbStorageLimitMb = Number(process.env.DB_STORAGE_LIMIT_MB || 1024)
 
   const [
     [usersRows],
@@ -565,22 +568,38 @@ app.get("/admin/summary", requireAuth, requireAdmin, async (req, res) => {
     [domainRows],
     [pathRows],
     [recentUsers],
+    [scanDailyRows],
+    [dbSizeRows],
   ] = await Promise.all([
     db.query("SELECT COUNT(*) total, SUM(created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)) last7 FROM users"),
     db.query("SELECT COUNT(*) activePro FROM users WHERE plan='pro' AND pro_until > NOW()"),
     db.query("SELECT COUNT(*) total, SUM(created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)) last7, SUM(closed_at IS NOT NULL) closed FROM rounds"),
     db.query("SELECT COUNT(*) total, COALESCE(SUM(price),0) totalValue FROM items"),
-    db.query("SELECT COALESCE(SUM(scans),0) total, COALESCE(SUM(CASE WHEN usage_date >= CURRENT_DATE - INTERVAL 7 DAY THEN scans ELSE 0 END),0) last7 FROM ai_scan_usage"),
-    db.query("SELECT COUNT(*) total, SUM(created_at >= CURRENT_DATE) today, SUM(created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)) last7 FROM page_views"),
-    db.query("SELECT COUNT(DISTINCT visitor_key) total, COUNT(DISTINCT CASE WHEN created_at >= CURRENT_DATE THEN visitor_key END) today, COUNT(DISTINCT CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN visitor_key END) last7 FROM page_views"),
-    db.query("SELECT COALESCE(hostname, 'unknown') hostname, COUNT(*) views, COUNT(DISTINCT visitor_key) visitors FROM page_views GROUP BY COALESCE(hostname, 'unknown') ORDER BY views DESC LIMIT 8"),
-    db.query("SELECT path, COUNT(*) views, COUNT(DISTINCT visitor_key) visitors FROM page_views GROUP BY path ORDER BY views DESC LIMIT 8"),
+    db.query("SELECT COALESCE(SUM(scans),0) total, COALESCE(SUM(CASE WHEN usage_date = CURRENT_DATE THEN scans ELSE 0 END),0) today, COALESCE(SUM(CASE WHEN usage_date >= CURRENT_DATE - INTERVAL 7 DAY THEN scans ELSE 0 END),0) last7 FROM ai_scan_usage"),
+    db.query("SELECT COALESCE(SUM(sessions),0) total, COALESCE(SUM(CASE WHEN visit_date=CURRENT_DATE THEN sessions ELSE 0 END),0) today, COALESCE(SUM(CASE WHEN visit_date >= CURRENT_DATE - INTERVAL 7 DAY THEN sessions ELSE 0 END),0) last7 FROM site_visits_daily"),
+    db.query("SELECT COUNT(*) total, SUM(visit_date=CURRENT_DATE) today, SUM(visit_date >= CURRENT_DATE - INTERVAL 7 DAY) last7 FROM site_visits_daily"),
+    db.query("SELECT COALESCE(hostname, 'unknown') hostname, SUM(sessions) views, COUNT(*) visitors FROM site_visits_daily GROUP BY COALESCE(hostname, 'unknown') ORDER BY views DESC LIMIT 8"),
+    db.query("SELECT COALESCE(entry_path, '/') path, SUM(sessions) views, COUNT(*) visitors FROM site_visits_daily GROUP BY COALESCE(entry_path, '/') ORDER BY views DESC LIMIT 8"),
     db.query("SELECT id, email, name, plan, pro_until, created_at FROM users ORDER BY created_at DESC LIMIT 8"),
+    db.query("SELECT usage_date, SUM(scans) scans, COUNT(*) users FROM ai_scan_usage GROUP BY usage_date ORDER BY usage_date DESC LIMIT 14"),
+    db.query(`
+      SELECT
+        COALESCE(SUM(data_length + index_length), 0) bytes,
+        COALESCE(SUM(data_length), 0) dataBytes,
+        COALESCE(SUM(index_length), 0) indexBytes,
+        COUNT(*) tablesCount
+      FROM information_schema.tables
+      WHERE table_schema = DATABASE()
+    `),
   ])
 
   const scansTotal = Number(scanRows[0]?.total || 0)
   const estimatedAiCost = scansTotal * (Number.isFinite(aiScanCost) ? aiScanCost : 0)
   const monthlyCost = Number.isFinite(serverMonthlyCost) ? serverMonthlyCost : 0
+  const dbBytes = Number(dbSizeRows[0]?.bytes || 0)
+  const dbLimitBytes = Number.isFinite(dbStorageLimitMb) && dbStorageLimitMb > 0
+    ? dbStorageLimitMb * 1024 * 1024
+    : null
 
   res.json({
     generatedAt: new Date().toISOString(),
@@ -602,6 +621,7 @@ app.get("/admin/summary", requireAuth, requireAdmin, async (req, res) => {
       itemValue: Number(itemRows[0]?.totalValue || 0),
       scans: scansTotal,
       scansLast7: Number(scanRows[0]?.last7 || 0),
+      scansToday: Number(scanRows[0]?.today || 0),
       pageViews: Number(viewRows[0]?.total || 0),
       pageViewsToday: Number(viewRows[0]?.today || 0),
       pageViewsLast7: Number(viewRows[0]?.last7 || 0),
@@ -614,6 +634,23 @@ app.get("/admin/summary", requireAuth, requireAdmin, async (req, res) => {
       estimatedAiCostThb: estimatedAiCost,
       serverMonthlyCostThb: monthlyCost,
       estimatedTotalCostThb: estimatedAiCost + monthlyCost,
+    },
+    scanUsage: {
+      freeDailyLimit: Number.isFinite(freeScanDailyLimit) ? freeScanDailyLimit : null,
+      daily: scanDailyRows.map(row => ({
+        date: row.usage_date,
+        scans: Number(row.scans || 0),
+        users: Number(row.users || 0),
+      })),
+    },
+    database: {
+      bytes: dbBytes,
+      mb: dbBytes / 1024 / 1024,
+      dataMb: Number(dbSizeRows[0]?.dataBytes || 0) / 1024 / 1024,
+      indexMb: Number(dbSizeRows[0]?.indexBytes || 0) / 1024 / 1024,
+      limitMb: dbLimitBytes ? dbLimitBytes / 1024 / 1024 : null,
+      usedPercent: dbLimitBytes ? (dbBytes / dbLimitBytes) * 100 : null,
+      tablesCount: Number(dbSizeRows[0]?.tablesCount || 0),
     },
     domains: domainRows,
     topPaths: pathRows,

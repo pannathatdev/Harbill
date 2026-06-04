@@ -13,6 +13,13 @@ function formatMoney(value) {
   }).format(Number(value || 0))
 }
 
+function formatMb(value) {
+  return `${Number(value || 0).toLocaleString("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} MB`
+}
+
 function Metric({ label, value, sub }) {
   return (
     <div className="rounded-xl border border-white/10 bg-[#1c1c2e] p-4">
@@ -148,6 +155,9 @@ export default function AdminPage() {
   const totals = summary?.totals || {}
   const costs = summary?.costs || {}
   const env = summary?.environment || {}
+  const scanUsage = summary?.scanUsage || {}
+  const database = summary?.database || {}
+  const dbUsedPercent = Number(database.usedPercent || 0)
 
   return (
     <div className="space-y-4">
@@ -176,9 +186,40 @@ export default function AdminPage() {
         <Metric label="ผู้ใช้ทั้งหมด" value={formatNumber(totals.users)} sub={`+${formatNumber(totals.usersLast7)} ใน 7 วัน`} />
         <Metric label="Pro Active" value={formatNumber(totals.activePro)} sub="สมาชิกที่ยังไม่หมดอายุ" />
         <Metric label="ผู้เข้าชม" value={formatNumber(totals.visitors)} sub={`วันนี้ ${formatNumber(totals.visitorsToday)} · 7 วัน ${formatNumber(totals.visitorsLast7)}`} />
-        <Metric label="Page views" value={formatNumber(totals.pageViews)} sub={`วันนี้ ${formatNumber(totals.pageViewsToday)} · 7 วัน ${formatNumber(totals.pageViewsLast7)}`} />
+        <Metric label="Visits" value={formatNumber(totals.pageViews)} sub={`วันนี้ ${formatNumber(totals.pageViewsToday)} · 7 วัน ${formatNumber(totals.pageViewsLast7)}`} />
         <Metric label="รอบที่สร้าง" value={formatNumber(totals.rounds)} sub={`ปิดแล้ว ${formatNumber(totals.closedRounds)} รอบ`} />
-        <Metric label="AI scans" value={formatNumber(totals.scans)} sub={`7 วัน ${formatNumber(totals.scansLast7)} ครั้ง`} />
+        <Metric label="AI scans" value={formatNumber(totals.scans)} sub={`วันนี้ ${formatNumber(totals.scansToday)} · 7 วัน ${formatNumber(totals.scansLast7)}`} />
+      </div>
+
+      <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
+        <p className="text-sm font-semibold text-blue-100">อัปสลิป / AI scan</p>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <Metric label="สถานะผู้ใช้" value="Free quota" sub={`Free ${scanUsage.freeDailyLimit ?? "-"} ครั้ง/วัน · Pro ไม่จำกัด`} />
+          <Metric label="วันนี้" value={formatNumber(totals.scansToday)} sub={`ทั้งหมด ${formatNumber(totals.scans)} ครั้ง`} />
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-amber-100">Database storage</p>
+            <p className="mt-1 text-xs text-amber-100/70">
+              ใช้ {formatMb(database.mb)}{database.limitMb ? ` จาก ${formatMb(database.limitMb)}` : ""} · {formatNumber(database.tablesCount)} tables
+            </p>
+          </div>
+          <p className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${dbUsedPercent >= 80 ? "bg-red-500/20 text-red-200" : "bg-emerald-500/20 text-emerald-200"}`}>
+            {database.usedPercent == null ? "no limit" : `${dbUsedPercent.toFixed(1)}%`}
+          </p>
+        </div>
+        {database.limitMb && (
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/20">
+            <div
+              className={`h-full ${dbUsedPercent >= 80 ? "bg-red-400" : "bg-emerald-400"}`}
+              style={{ width: `${Math.min(dbUsedPercent, 100)}%` }}
+            />
+          </div>
+        )}
+        <p className="mt-2 text-xs text-amber-100/60">Data {formatMb(database.dataMb)} · Index {formatMb(database.indexMb)}</p>
       </div>
 
       <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
@@ -200,6 +241,18 @@ export default function AdminPage() {
       </div>
 
       <ListTable
+        title="AI scan รายวัน"
+        rows={scanUsage.daily}
+        empty="ยังไม่มีการอัปสลิป"
+        renderRow={row => (
+          <div key={row.date} className="flex items-center justify-between gap-3 rounded-xl bg-[#13131f] px-3 py-2 text-sm">
+            <span className="min-w-0 truncate text-gray-300">{new Date(row.date).toLocaleDateString("th-TH")}</span>
+            <span className="shrink-0 text-xs text-gray-500">{formatNumber(row.scans)} ครั้ง · {formatNumber(row.users)} คน</span>
+          </div>
+        )}
+      />
+
+      <ListTable
         title="Domain ที่มี traffic"
         rows={summary.domains}
         empty="ยังไม่มีข้อมูล domain"
@@ -212,9 +265,9 @@ export default function AdminPage() {
       />
 
       <ListTable
-        title="หน้าที่ถูกดูบ่อย"
+        title="หน้าแรกที่คนเข้ามา"
         rows={summary.topPaths}
-        empty="ยังไม่มี page view"
+        empty="ยังไม่มี visit"
         renderRow={row => (
           <div key={row.path} className="flex items-center justify-between gap-3 rounded-xl bg-[#13131f] px-3 py-2 text-sm">
             <span className="min-w-0 truncate text-gray-300">{row.path}</span>

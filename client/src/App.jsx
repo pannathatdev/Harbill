@@ -144,6 +144,9 @@ export default function App() {
   }, [location.pathname])
 
   useEffect(() => {
+    if (sessionStorage.getItem("harbill:visitTracked")) return
+    sessionStorage.setItem("harbill:visitTracked", "true")
+
     const visitorKey = analyticsId("visitor")
     const sessionKey = analyticsId("session", sessionStorage)
     api.trackPageView({
@@ -153,7 +156,7 @@ export default function App() {
       hostname: window.location.hostname,
       referrer: document.referrer,
     })
-  }, [location.pathname, location.search])
+  }, [])
 
   useEffect(() => {
     const token = localStorage.getItem("token")
