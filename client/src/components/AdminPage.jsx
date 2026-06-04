@@ -100,6 +100,17 @@ export default function AdminPage() {
     }
   }
 
+  async function activatePro(userId) {
+    if (!adminToken) return
+    setError("")
+    try {
+      await api.activateUserPro(adminToken, userId, 30)
+      await load(adminToken)
+    } catch (err) {
+      setError(err.message || "เปิด Pro ไม่สำเร็จ")
+    }
+  }
+
   if (!adminToken) {
     return (
       <div className="space-y-4">
@@ -284,9 +295,17 @@ export default function AdminPage() {
           <div key={user.id} className="rounded-xl bg-[#13131f] px-3 py-2">
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className="min-w-0 truncate text-gray-200">{user.name || user.email}</span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${user.isPro ? "bg-emerald-500/20 text-emerald-200" : "bg-white/10 text-gray-500"}`}>
-                {user.isPro ? "PRO" : "FREE"}
-              </span>
+              {user.isPro ? (
+                <span className="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-200">PRO</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => activatePro(user.id)}
+                  className="shrink-0 rounded-full bg-purple-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-purple-500"
+                >
+                  เปิด Pro
+                </button>
+              )}
             </div>
             <p className="mt-0.5 truncate text-xs text-gray-600">{user.email}</p>
           </div>

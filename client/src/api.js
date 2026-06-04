@@ -30,10 +30,12 @@ function writeCache(path, data) {
   }
 }
 
-function clearApiCache() {
+function clearApiCache(paths = null) {
   const prefix = `${CACHE_PREFIX}${getToken() || "guest"}:`
+  const matchPaths = Array.isArray(paths) ? paths : null
   Object.keys(localStorage)
     .filter(key => key.startsWith(prefix))
+    .filter(key => !matchPaths || matchPaths.some(path => key.startsWith(`${prefix}${path}`)))
     .forEach(key => localStorage.removeItem(key))
 }
 
@@ -42,6 +44,8 @@ async function req(path, options = {}) {
   const skipCache = options.skipCache || options.cache === "no-store"
   const fetchOptions = { ...options }
   delete fetchOptions.skipCache
+  const invalidate = fetchOptions.invalidate
+  delete fetchOptions.invalidate
 
   if (method === "GET" && !skipCache) {
     const cached = readCache(path)
@@ -75,21 +79,21 @@ async function req(path, options = {}) {
   }
 
   if (method === "GET" && !skipCache) writeCache(path, data)
-  if (method !== "GET") clearApiCache()
+  if (method !== "GET") clearApiCache(invalidate)
 
   return data
 }
 
-function post(path, body) {
-  return req(path, { method: "POST", body: JSON.stringify(body) })
+function post(path, body, options = {}) {
+  return req(path, { method: "POST", body: JSON.stringify(body), ...options })
 }
 
-function patch(path, body) {
-  return req(path, { method: "PATCH", body: JSON.stringify(body) })
+function patch(path, body, options = {}) {
+  return req(path, { method: "PATCH", body: JSON.stringify(body), ...options })
 }
 
-function del(path) {
-  return req(path, { method: "DELETE" })
+function del(path, options = {}) {
+  return req(path, { method: "DELETE", ...options })
 }
 
 export const api = {
@@ -115,41 +119,52 @@ export const api = {
     skipCache: true,
     headers: { "x-admin-token": adminToken }
   }),
+  activateUserPro: (adminToken, userId, days = 30) => post("/admin/pro/activate", { userId, days }, {
+    headers: { "x-admin-token": adminToken },
+    invalidate: ["/admin/summary"]
+  }),
 
   // Billing
   getProStatus: () => req("/billing/pro-status", { skipCache: true }),
+  requestProManual: (days, reference) => post("/billing/pro/request", { days, reference }),
   activateProManual: (days, reference) => post("/billing/pro/mock-activate", { days, reference }),
 
   // Friends
   getFriends: () => req("/friends"),
-  addFriend: (name) => post("/friends", { name }),
-  deleteFriend: (id) => del(`/friends/${id}`),
+  addFriend: (name) => post("/friends", { name }, { invalidate: ["/friends"] }),
+  deleteFriend: (id) => del(`/friends/${id}`, { invalidate: ["/friends"] }),
 
   // Groups
   getGroups: () => req("/groups"),
-  addGroup: (name) => post("/groups", { name }),
-  updateGroup: (id, name) => patch(`/groups/${id}`, { name }),
-  deleteGroup: (id) => del(`/groups/${id}`),
-  addGroupMember: (gid, friend_name) => post(`/groups/${gid}/members`, { friend_name }),
-  removeGroupMember: (gid, name) => del(`/groups/${gid}/members/${name}`),
+  addGroup: (name) => post("/groups", { name }, { invalidate: ["/groups"] }),
+  updateGroup: (id, name) => patch(`/groups/${id}`, { name }, { invalidate: ["/groups"] }),
+  deleteGroup: (id) => del(`/groups/${id}`, { invalidate: ["/groups"] }),
+  addGroupMember: (gid, friend_name) => post(`/groups/${gid}/members`, { friend_name }, { invalidate: ["/groups"] }),
+  removeGroupMember: (gid, name) => del(`/groups/${gid}/members/${name}`, { invalidate: ["/groups"] }),
 
   // Rounds
-  getRounds: (options) => req("/rounds", options),
-  createRound: (name, joiners) => post("/rounds", { name, joiners }),
-  closeRound: (id) => patch(`/rounds/${id}/close`),
-  reopenRound: (id) => patch(`/rounds/${id}/reopen`),
-  addRoundMember: (roundId, friend_name) => post(`/rounds/${roundId}/members`, { friend_name }),
+  getRounds: (options = {}) => {
+    const { limit, meta, ...requestOptions } = options
+    const params = new URLSearchParams()
+    if (limit) params.set("limit", String(limit))
+    if (meta) params.set("meta", "1")
+    return req(`/rounds${params.toString() ? `?${params}` : ""}`, requestOptions)
+  },
+  createRound: (name, joiners) => post("/rounds", { name, joiners }, { invalidate: ["/rounds"] }),
+  closeRound: (id) => patch(`/rounds/${id}/close`, undefined, { invalidate: ["/rounds"] }),
+  reopenRound: (id) => patch(`/rounds/${id}/reopen`, undefined, { invalidate: ["/rounds"] }),
+  addRoundMember: (roundId, friend_name) => post(`/rounds/${roundId}/members`, { friend_name }, { invalidate: ["/rounds"] }),
 
   // Items
-  addItem: (roundId, name, price, splitWith) => post(`/rounds/${roundId}/items`, { name, price, splitWith }),
-  updateItem: (itemId, name, price) => post(`/items/${itemId}/update`, { name, price }),
-  updateSplits: (itemId, splitWith) => patch(`/items/${itemId}/splits`, { splitWith }),
-  deleteItem: (id) => del(`/items/${id}`),
+  addItem: (roundId, name, price, splitWith) => post(`/rounds/${roundId}/items`, { name, price, splitWith }, { invalidate: ["/rounds"] }),
+  updateItem: (itemId, name, price) => post(`/items/${itemId}/update`, { name, price }, { invalidate: ["/rounds"] }),
+  updateSplits: (itemId, splitWith) => patch(`/items/${itemId}/splits`, { splitWith }, { invalidate: ["/rounds"] }),
+  deleteItem: (id) => del(`/items/${id}`, { invalidate: ["/rounds"] }),
 
   // Payment
   getPaymentInfo: () => req("/payment-info"),
-  savePaymentInfo: (data) => post("/payment-info", data),
-  deletePaymentInfo: (name) => del(`/payment-info/${name}`),
+  savePaymentInfo: (data) => post("/payment-info", data, { invalidate: ["/payment-info"] }),
+  deletePaymentInfo: (name) => del(`/payment-info/${name}`, { invalidate: ["/payment-info"] }),
 
   // Scan
   scanReceipt: (file) => {
@@ -160,7 +175,7 @@ export const api = {
       headers: { "Authorization": `Bearer ${getToken()}` },
       body: form
     }).then(r => {
-      clearApiCache()
+      clearApiCache(["/rounds"])
       return r.json()
     })
   }

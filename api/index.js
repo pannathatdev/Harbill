@@ -661,10 +661,54 @@ app.get("/admin/summary", requireAuth, requireAdmin, async (req, res) => {
   })
 })
 
+app.post("/admin/pro/activate", requireAuth, requireAdmin, async (req, res) => {
+  await ensureMonetizationSchema()
+  const userId = Number(req.body.userId)
+  const days = Math.min(Math.max(Number(req.body.days) || 30, 1), 366)
+
+  if (!userId) return res.status(400).json({ error: "Missing user id" })
+
+  await db.query(
+    "UPDATE users SET plan='pro', pro_until=DATE_ADD(GREATEST(COALESCE(pro_until, NOW()), NOW()), INTERVAL ? DAY) WHERE id=?",
+    [days, userId]
+  )
+
+  const [rows] = await db.query("SELECT id, email, name, plan, pro_until FROM users WHERE id=?", [userId])
+  if (!rows[0]) return res.status(404).json({ error: "User not found" })
+
+  await notifyTelegram([
+    "Harbill Pro activated by admin",
+    `Admin: ${req.user.email || "-"}`,
+    `User: ${rows[0].name || "-"} (${rows[0].email || "-"})`,
+    `Days: ${days}`,
+    `Pro until: ${rows[0].pro_until || "-"}`,
+    `Time: ${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`
+  ].join("\n"))
+
+  res.json({ ok: true, user: { ...rows[0], isPro: userPlan(rows[0]).isPro } })
+})
+
 app.get("/billing/pro-status", requireAuth, async (req, res) => {
   await ensureMonetizationSchema()
   const [rows] = await db.query("SELECT plan, pro_until FROM users WHERE id=?", [req.user.id])
   res.json(userPlan(rows[0]))
+})
+
+app.post("/billing/pro/request", requireAuth, async (req, res) => {
+  await ensureMonetizationSchema()
+  const days = Math.min(Math.max(Number(req.body.days) || 30, 1), 366)
+  const reference = String(req.body.reference || "").trim()
+
+  const notificationSent = await notifyTelegram([
+    "Harbill Pro payment request",
+    `User: ${req.user.name || "-"} (${req.user.email || "-"})`,
+    `Days: ${days}`,
+    `Reference: ${reference || "-"}`,
+    "Status: waiting for manual verification",
+    `Time: ${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`
+  ].join("\n"))
+
+  res.json({ ok: true, reference, notificationSent, status: "pending" })
 })
 
 app.post("/billing/pro/mock-activate", requireAuth, async (req, res) => {
@@ -682,8 +726,8 @@ app.post("/billing/pro/mock-activate", requireAuth, async (req, res) => {
   )
 
   const [rows] = await db.query("SELECT plan, pro_until FROM users WHERE id=?", [req.user.id])
-  await notifyTelegram([
-    "Harbill Pro request",
+  const notificationSent = await notifyTelegram([
+    "Harbill Pro activated",
     `User: ${req.user.name || "-"} (${req.user.email || "-"})`,
     `Days: ${days}`,
     `Reference: ${reference || "-"}`,
@@ -691,7 +735,7 @@ app.post("/billing/pro/mock-activate", requireAuth, async (req, res) => {
     `Time: ${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`
   ].join("\n"))
 
-  res.json({ ok: true, reference, ...userPlan(rows[0]) })
+  res.json({ ok: true, reference, notificationSent, ...userPlan(rows[0]) })
 })
 
 // ── FRIENDS ───────────────────────────────────────────────────
@@ -768,9 +812,18 @@ app.delete("/groups/:id/members/:name", requireAuth, async (req, res) => {
 
 // ── ROUNDS ────────────────────────────────────────────────────
 app.get("/rounds", requireAuth, async (req, res) => {
-  const [rounds] = await db.query("SELECT * FROM rounds WHERE user_id=? ORDER BY created_at DESC", [req.user.id])
+  const limit = Math.min(Math.max(Number(req.query.limit) || 0, 0), 200)
+  const withMeta = req.query.meta === "1"
+  const [countRows] = withMeta
+    ? await db.query("SELECT COUNT(*) total FROM rounds WHERE user_id=?", [req.user.id])
+    : [[]]
+  const [rounds] = limit > 0
+    ? await db.query("SELECT * FROM rounds WHERE user_id=? ORDER BY created_at DESC LIMIT ?", [req.user.id, limit])
+    : await db.query("SELECT * FROM rounds WHERE user_id=? ORDER BY created_at DESC", [req.user.id])
   const roundIds = rounds.map(r => r.id)
-  if (roundIds.length === 0) return res.json([])
+  if (roundIds.length === 0) {
+    return res.json(withMeta ? { rounds: [], total: Number(countRows[0]?.total || 0), hasMore: false } : [])
+  }
 
   const [members] = await db.query(`SELECT * FROM round_members WHERE round_id IN (${roundIds.map(() => "?").join(",")})`, roundIds)
   const [items] = await db.query(`SELECT * FROM items WHERE round_id IN (${roundIds.map(() => "?").join(",")})`, roundIds)
@@ -779,15 +832,41 @@ app.get("/rounds", requireAuth, async (req, res) => {
     ? (await db.query(`SELECT * FROM item_splits WHERE item_id IN (${itemIds.map(() => "?").join(",")})`, itemIds))[0]
     : []
 
-  res.json(rounds.map(r => ({
+  const membersByRound = new Map()
+  members.forEach(member => {
+    const list = membersByRound.get(member.round_id) || []
+    list.push(member.friend_name)
+    membersByRound.set(member.round_id, list)
+  })
+
+  const splitsByItem = new Map()
+  splits.forEach(split => {
+    const list = splitsByItem.get(split.item_id) || []
+    list.push(split.friend_name)
+    splitsByItem.set(split.item_id, list)
+  })
+
+  const itemsByRound = new Map()
+  items.forEach(item => {
+    const list = itemsByRound.get(item.round_id) || []
+    list.push({
+      ...item,
+      price: parseFloat(item.price),
+      splitWith: splitsByItem.get(item.id) || []
+    })
+    itemsByRound.set(item.round_id, list)
+  })
+
+  const payload = rounds.map(r => ({
     ...r,
-    joiners: members.filter(m => m.round_id === r.id).map(m => m.friend_name),
-    items: items.filter(i => i.round_id === r.id).map(i => ({
-      ...i,
-      price: parseFloat(i.price),
-      splitWith: splits.filter(s => s.item_id === i.id).map(s => s.friend_name)
-    }))
-  })))
+    joiners: membersByRound.get(r.id) || [],
+    items: itemsByRound.get(r.id) || []
+  }))
+
+  res.json(withMeta
+    ? { rounds: payload, total: Number(countRows[0]?.total || 0), hasMore: Number(countRows[0]?.total || 0) > payload.length }
+    : payload
+  )
 })
 
 app.post("/rounds", requireAuth, async (req, res) => {

@@ -93,17 +93,17 @@ export default function ProPage({ user, onUserUpdate }) {
     return () => { cancelled = true }
   }, [])
 
-  async function activateManual() {
+  async function requestManualActivation() {
     setSaving(true)
     setMessage("")
     try {
-      const status = await api.activateProManual(proDays, reference || `manual-${Date.now()}`)
-      const nextUser = { ...user, ...status }
-      localStorage.setItem("user", JSON.stringify(nextUser))
-      onUserUpdate?.(nextUser)
-      setMessage("เปิด Pro ให้บัญชีนี้แล้วครับ")
+      const result = await api.requestProManual(proDays, reference || `manual-${Date.now()}`)
+      setMessage(result.notificationSent
+        ? "ส่งแจ้งโอนแล้วครับ รอตรวจสอบยอดก่อนเปิด Pro"
+        : "รับคำขอแล้ว แต่ยังส่ง Telegram ไม่ได้ กรุณาแจ้งแอดมินอีกครั้ง"
+      )
     } catch (error) {
-      setMessage(error.message || "ยังเปิด Pro ไม่สำเร็จ")
+      setMessage(error.message || "ยังส่งแจ้งโอนไม่สำเร็จ")
     } finally {
       setSaving(false)
     }
@@ -145,7 +145,7 @@ export default function ProPage({ user, onUserUpdate }) {
 
       <div className="rounded-2xl border border-white/10 bg-[#1c1c2e] p-5">
         <p className="text-sm font-semibold text-white">จ่ายผ่าน PromptPay</p>
-        <p className="mt-1 text-xs text-gray-500">สแกน QR แล้วกดแจ้งโอนด้านล่าง ช่วงเริ่มต้นระบบนี้เป็น manual activation</p>
+        <p className="mt-1 text-xs text-gray-500">สแกน QR แล้วกดแจ้งโอนด้านล่าง ระบบจะส่งคำขอให้แอดมินตรวจสอบก่อนเปิด Pro</p>
 
         <div className="mx-auto mt-4 w-fit rounded-2xl bg-white p-3">
           {qrUrl ? (
@@ -169,11 +169,11 @@ export default function ProPage({ user, onUserUpdate }) {
 
         <button
           type="button"
-          onClick={activateManual}
+          onClick={requestManualActivation}
           disabled={saving}
           className="mt-3 w-full rounded-xl bg-purple-600 py-3 text-sm font-bold text-white transition-colors hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {saving ? "กำลังเปิด Pro..." : "แจ้งโอนและเปิด Pro"}
+          {saving ? "กำลังส่งแจ้งโอน..." : "แจ้งโอน"}
         </button>
         {message && <p className="mt-2 text-center text-xs text-emerald-300">{message}</p>}
       </div>

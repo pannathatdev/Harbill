@@ -32,16 +32,22 @@ function formatAmount(value) {
 export default function HistoryPage({ user, onEditRound }) {
     const [rounds, setRounds] = useState([])
     const [open, setOpen] = useState(null)
+    const [totalRounds, setTotalRounds] = useState(0)
     const navigate = useNavigate()
     const isPro = user?.isPro || user?.plan === "pro"
-    const visibleRounds = isPro ? rounds : rounds.slice(0, FREE_HISTORY_LIMIT)
-    const hiddenCount = Math.max(0, rounds.length - visibleRounds.length)
+    const visibleRounds = rounds
+    const hiddenCount = Math.max(0, totalRounds - visibleRounds.length)
 
-    useEffect(() => { load() }, [])
+    useEffect(() => { load() }, [isPro])
 
     async function load() {
-        const all = await api.getRounds({ skipCache: true })
-        setRounds(all)
+        const result = await api.getRounds({
+            skipCache: true,
+            limit: isPro ? 0 : FREE_HISTORY_LIMIT,
+            meta: true
+        })
+        setRounds(result.rounds || [])
+        setTotalRounds(result.total || 0)
     }
 
     async function reopenRound(round) {

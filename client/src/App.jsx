@@ -44,7 +44,7 @@ function Layout({ children, user, onLogout }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 text-white">
-      <div className="sticky top-0 z-10 bg-black/20 backdrop-blur-md border-b border-white/10">
+      <div className="sticky top-0 z-10 bg-black/25 backdrop-blur-sm border-b border-white/10">
         <div className="max-w-lg mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-2">
             <span className="text-xl">🍽️</span>
@@ -77,7 +77,7 @@ function Layout({ children, user, onLogout }) {
 
       <div className="fixed bottom-0 left-0 right-0 z-10">
         <div className="max-w-lg mx-auto">
-          <div className="bg-black/30 backdrop-blur-xl border-t border-white/10 rounded-t-3xl">
+          <div className="bg-black/40 backdrop-blur-sm border-t border-white/10 rounded-t-3xl">
             <div className="flex">
               {TABS.map(t => {
                 const active = path === t.id
