@@ -36,6 +36,7 @@ const upload = multer({
 let aiUsageSchemaReady = false
 let monetizationSchemaReady = false
 let analyticsSchemaReady = false
+const adminSessionAttempts = new Map()
 
 function dbErrorMessage(err) {
   if (err?.code === "ERR_OUT_OF_RANGE" || /offset.*out of range/i.test(err?.message || "")) {
@@ -162,6 +163,46 @@ function requireAdmin(req, res, next) {
 
   if (localOpen || allowed.includes(email)) return next()
   return res.status(403).json({ error: "Admin access required" })
+}
+
+function adminAttemptKey(req) {
+  return `${req.user?.id || "anon"}:${req.ip || req.headers["x-forwarded-for"] || "unknown"}`
+}
+
+function checkAdminSessionAttempts(req) {
+  const windowMs = 15 * 60 * 1000
+  const maxAttempts = Math.min(Math.max(Number(process.env.ADMIN_SESSION_MAX_ATTEMPTS) || 5, 1), 50)
+  const now = Date.now()
+  const key = adminAttemptKey(req)
+  const existing = adminSessionAttempts.get(key) || { count: 0, resetAt: now + windowMs }
+
+  if (existing.resetAt <= now) {
+    existing.count = 0
+    existing.resetAt = now + windowMs
+  }
+
+  if (existing.count >= maxAttempts) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.ceil((existing.resetAt - now) / 1000),
+      maxAttempts
+    }
+  }
+
+  adminSessionAttempts.set(key, existing)
+  return { allowed: true, key, maxAttempts }
+}
+
+function recordAdminSessionFailure(key) {
+  if (!key) return
+  const attempt = adminSessionAttempts.get(key)
+  if (!attempt) return
+  attempt.count += 1
+  adminSessionAttempts.set(key, attempt)
+}
+
+function clearAdminSessionFailures(key) {
+  if (key) adminSessionAttempts.delete(key)
 }
 
 function base32ToBuffer(value) {
@@ -537,6 +578,15 @@ app.post("/admin/session", requireAuth, async (req, res) => {
     return res.status(403).json({ error: "Admin access required" })
   }
 
+  const attempt = checkAdminSessionAttempts(req)
+  if (!attempt.allowed) {
+    return res.status(429).json({
+      error: `ลองรหัสหลังบ้านผิดหลายครั้ง กรุณารอประมาณ ${Math.ceil(attempt.retryAfterSeconds / 60)} นาที`,
+      code: "ADMIN_SESSION_RATE_LIMIT",
+      retryAfterSeconds: attempt.retryAfterSeconds
+    })
+  }
+
   const password = String(req.body.password || "")
   const code = String(req.body.code || "")
   const passwordHash = process.env.ADMIN_PASSWORD_HASH
@@ -560,8 +610,11 @@ app.post("/admin/session", requireAuth, async (req, res) => {
     : process.env.NODE_ENV !== "production" && code === "000000"
 
   if (!passwordOk || !totpOk) {
+    recordAdminSessionFailure(attempt.key)
     return res.status(401).json({ error: "Invalid admin password or authenticator code" })
   }
+
+  clearAdminSessionFailures(attempt.key)
 
   const expiresInSeconds = 2 * 60 * 60
   const token = jwt.sign(
@@ -725,7 +778,7 @@ app.get("/billing/pro-status", requireAuth, async (req, res) => {
 
 app.post("/billing/pro/request", requireAuth, async (req, res) => {
   await ensureMonetizationSchema()
-  const days = Math.min(Math.max(Number(req.body.days) || 30, 1), 366)
+  const days = Math.min(Math.max(Number(process.env.PRO_PLAN_DAYS) || 30, 1), 366)
   const reference = String(req.body.reference || "").trim()
   const cooldownMinutes = Math.min(Math.max(Number(process.env.PRO_REQUEST_COOLDOWN_MINUTES) || 5, 1), 1440)
   const dailyLimit = Math.min(Math.max(Number(process.env.PRO_REQUEST_DAILY_LIMIT) || 5, 1), 50)
@@ -783,7 +836,7 @@ app.post("/billing/pro/request", requireAuth, async (req, res) => {
   res.json({ ok: true, reference, notificationSent, status: "pending" })
 })
 
-app.post("/billing/pro/mock-activate", requireAuth, async (req, res) => {
+app.post("/billing/pro/mock-activate", requireAuth, requireAdmin, async (req, res) => {
   await ensureMonetizationSchema()
   const days = Math.min(Math.max(Number(req.body.days) || 30, 1), 366)
   const reference = String(req.body.reference || "").trim()

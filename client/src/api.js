@@ -126,8 +126,7 @@ export const api = {
 
   // Billing
   getProStatus: () => req("/billing/pro-status", { skipCache: true }),
-  requestProManual: (days, reference) => post("/billing/pro/request", { days, reference }),
-  activateProManual: (days, reference) => post("/billing/pro/mock-activate", { days, reference }),
+  requestProManual: (reference) => post("/billing/pro/request", { reference }),
 
   // Friends
   getFriends: () => req("/friends"),

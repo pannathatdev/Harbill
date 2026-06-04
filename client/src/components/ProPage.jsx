@@ -100,7 +100,7 @@ export default function ProPage({ user, onUserUpdate }) {
     setSaving(true)
     setMessage("")
     try {
-      const result = await api.requestProManual(proDays, reference || `manual-${Date.now()}`)
+      const result = await api.requestProManual(reference || `manual-${Date.now()}`)
       setMessage(result.notificationSent
         ? "ส่งแจ้งโอนแล้วครับ รอตรวจสอบยอดก่อนเปิด Pro"
         : "รับคำขอแล้ว แต่ยังส่ง Telegram ไม่ได้ กรุณาแจ้งแอดมินอีกครั้ง"
