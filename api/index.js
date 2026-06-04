@@ -45,6 +45,15 @@ function dbErrorMessage(err) {
   return err.message
 }
 
+function publicDbHealthInfo() {
+  const dbConfig = typeof db.getDebugInfo === "function" ? db.getDebugInfo() : undefined
+  if (!dbConfig) return undefined
+  return {
+    source: dbConfig.source,
+    ssl: Boolean(dbConfig.ssl)
+  }
+}
+
 async function ensureGoogleAuthSchema() {
   const [columns] = await db.query(`
     SELECT COLUMN_NAME
@@ -452,7 +461,7 @@ app.get("/health", async (req, res) => {
   const usingDatabaseUrl = Boolean(process.env.DATABASE_URL || process.env.MYSQL_URL || process.env.MYSQL_URI)
   const dbKeys = usingDatabaseUrl ? [] : ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"]
   const missing = [...dbKeys, "JWT_SECRET"].filter(key => isPlaceholder(process.env[key]))
-  const dbConfig = typeof db.getDebugInfo === "function" ? db.getDebugInfo() : undefined
+  const dbConfig = publicDbHealthInfo()
 
   if (missing.length > 0) {
     return res.status(500).json({
@@ -469,7 +478,14 @@ app.get("/health", async (req, res) => {
     await db.query("SELECT 1")
     res.json({ ok: true, db: true, googleAuthReady, googleCallbackUrl: GOOGLE_CALLBACK_URL, dbConfig })
   } catch (err) {
-    res.status(500).json({ ok: false, db: false, error: dbErrorMessage(err), googleAuthReady, googleCallbackUrl: GOOGLE_CALLBACK_URL, dbConfig })
+    res.status(500).json({
+      ok: false,
+      db: false,
+      error: process.env.NODE_ENV === "production" ? "Database health check failed" : dbErrorMessage(err),
+      googleAuthReady,
+      googleCallbackUrl: GOOGLE_CALLBACK_URL,
+      dbConfig
+    })
   }
 })
 
