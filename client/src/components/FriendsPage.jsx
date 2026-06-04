@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { api } from "../api"
 import { PageHeader } from "./HelpTip"
 
@@ -84,8 +84,13 @@ export default function FriendsPage() {
   const [payForm, setPayForm] = useState({
     bank_name: "", account_number: "", promptpay: "", display_name: ""
   })
+  const promptpayInputRef = useRef(null)
 
   useEffect(() => { load() }, [])
+
+  useEffect(() => {
+    if (editPayment) promptpayInputRef.current?.focus()
+  }, [editPayment])
 
   async function load() {
     const [f, g, p] = await Promise.all([
@@ -175,9 +180,14 @@ export default function FriendsPage() {
   }
 
   async function savePayment() {
+    const promptpay = payForm.promptpay.trim()
+    const bankName = payForm.bank_name || (promptpay ? "พร้อมเพย์อย่างเดียว" : "")
     await api.savePaymentInfo({
       friend_name: editPayment,
-      ...payForm
+      ...payForm,
+      bank_name: bankName,
+      account_number: bankName === "พร้อมเพย์อย่างเดียว" ? "" : payForm.account_number,
+      promptpay
     })
     setEditPayment(null)
     load()
@@ -301,6 +311,7 @@ export default function FriendsPage() {
                     )}
 
                     <input
+                      ref={promptpayInputRef}
                       className="w-full bg-[#13131f] border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500"
                       placeholder="เบอร์พร้อมเพย์ (ถ้ามี)"
                       value={payForm.promptpay}

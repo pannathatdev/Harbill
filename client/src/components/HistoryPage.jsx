@@ -22,6 +22,13 @@ function ChevronIcon({ open }) {
 
 const FREE_HISTORY_LIMIT = Number(import.meta.env.VITE_FREE_HISTORY_LIMIT || 10)
 
+function formatAmount(value) {
+    return Number(value || 0).toLocaleString("th-TH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })
+}
+
 export default function HistoryPage({ user, onEditRound }) {
     const [rounds, setRounds] = useState([])
     const [open, setOpen] = useState(null)
@@ -117,7 +124,7 @@ r.joiners.forEach(n => {
                                     <p className="text-xs text-gray-600">{date} • {r.joiners.length} คน • {r.closed_at ? "ปิดแล้ว" : "ยังไม่ปิด"}</p>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <span className="text-emerald-400 font-semibold">฿{total.toFixed(2)}</span>
+                                    <span className="text-emerald-400 font-semibold">฿{formatAmount(total)}</span>
                                     <span className="text-gray-600">
                                         <ChevronIcon open={isOpen} />
                                     </span>
@@ -139,7 +146,7 @@ r.joiners.forEach(n => {
                                                         <p className="text-sm">{item.name}</p>
                                                         <p className="text-xs text-gray-600">{sp.join(", ") || "ไม่มีคนหาร"}</p>
                                                     </div>
-                                                    <span className="text-emerald-400 text-sm">฿{item.price.toFixed(2)}</span>
+                                                    <span className="text-emerald-400 text-sm">฿{formatAmount(item.price)}</span>
                                                 </div>
                                             )
                                         })}
@@ -151,7 +158,7 @@ r.joiners.forEach(n => {
                                         {r.joiners.map(name => (
                                             <div key={name} className="flex justify-between bg-[#13131f] px-3 py-2 rounded-xl text-sm">
                                                 <span>{name}</span>
-                                                <span className="text-purple-400 font-medium">฿{(totals[name] || 0).toFixed(2)}</span>
+                                                <span className="text-purple-400 font-medium">฿{formatAmount(totals[name] || 0)}</span>
                                             </div>
                                         ))}
                                     </div>

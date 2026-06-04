@@ -5,6 +5,13 @@ const proPromptpay = import.meta.env.VITE_PRO_PROMPTPAY || import.meta.env.VITE_
 const proAmount = Number(import.meta.env.VITE_PRO_AMOUNT || 39)
 const proDays = Number(import.meta.env.VITE_PRO_DAYS || 30)
 
+function formatAmount(value) {
+  return Number(value || 0).toLocaleString("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
 const FEATURES = [
   "ไม่มีโฆษณาระหว่างใช้งาน",
   "ประวัติรอบไม่จำกัด",
@@ -115,7 +122,7 @@ export default function ProPage({ user, onUserUpdate }) {
           <div className="flex items-end justify-between gap-3">
             <div>
               <p className="text-sm text-gray-400">เริ่มต้น</p>
-              <p className="text-4xl font-extrabold text-white">฿{proAmount}</p>
+              <p className="text-4xl font-extrabold text-white">฿{formatAmount(proAmount)}</p>
               <p className="text-xs text-gray-500">ต่อ {proDays} วัน</p>
             </div>
             <span className={`rounded-full px-3 py-1 text-xs font-bold ${isPro ? "bg-emerald-500/20 text-emerald-200" : "bg-white/10 text-gray-300"}`}>
@@ -149,9 +156,8 @@ export default function ProPage({ user, onUserUpdate }) {
         </div>
 
         <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-center">
-          <p className="text-xs text-emerald-100/70">PromptPay</p>
-          <p className="text-lg font-bold text-emerald-200">{proPromptpay}</p>
-          <p className="text-xs text-emerald-100/70">ยอด ฿{proAmount.toFixed(2)}</p>
+          <p className="text-xs text-emerald-100/70">สแกน QR เพื่อชำระ Harbill Pro</p>
+          <p className="text-xs text-emerald-100/70">ยอด ฿{formatAmount(proAmount)}</p>
         </div>
 
         <input

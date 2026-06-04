@@ -215,6 +215,28 @@ async function optionalAuth(req, res, next) {
   next()
 }
 
+async function notifyTelegram(text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const chatId = process.env.TELEGRAM_CHAT_ID
+  if (!token || !chatId) return false
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        disable_web_page_preview: true
+      })
+    })
+    return response.ok
+  } catch (err) {
+    console.error("Telegram notification failed:", err.message)
+    return false
+  }
+}
+
 async function ensureAiUsageSchema() {
   if (aiUsageSchemaReady) return
 
@@ -623,6 +645,15 @@ app.post("/billing/pro/mock-activate", requireAuth, async (req, res) => {
   )
 
   const [rows] = await db.query("SELECT plan, pro_until FROM users WHERE id=?", [req.user.id])
+  await notifyTelegram([
+    "Harbill Pro request",
+    `User: ${req.user.name || "-"} (${req.user.email || "-"})`,
+    `Days: ${days}`,
+    `Reference: ${reference || "-"}`,
+    `Pro until: ${rows[0]?.pro_until || "-"}`,
+    `Time: ${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}`
+  ].join("\n"))
+
   res.json({ ok: true, reference, ...userPlan(rows[0]) })
 })
 

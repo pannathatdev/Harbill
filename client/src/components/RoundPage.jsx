@@ -11,6 +11,13 @@ const SUMMARY_TEMPLATES = [
 
 const publicAppUrl = import.meta.env.VITE_PUBLIC_APP_URL || "https://harbill-sandy.vercel.app"
 
+function formatAmount(value) {
+    return Number(value || 0).toLocaleString("th-TH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })
+}
+
 function ShareIcon() {
     return (
         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -177,6 +184,7 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     const [qrCopyModalMessage, setQrCopyModalMessage] = useState("")
     const [paymentInfo, setPaymentInfo] = useState({})
     const manualNameRef = useRef(null)
+    const ownerPromptpayRef = useRef(null)
 
     // เพิ่มเพื่อนใหม่ inline
     const [newFriendInput, setNewFriendInput] = useState("")
@@ -185,6 +193,10 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     useEffect(() => { loadFriends() }, [])
 
     useEffect(() => { loadPaymentInfo() }, [])
+
+    useEffect(() => {
+        if (showPromptpayForm) ownerPromptpayRef.current?.focus()
+    }, [showPromptpayForm])
 
     async function loadPaymentInfo() {
         const p = await api.getPaymentInfo()
@@ -306,7 +318,7 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
 
         ctx.fillStyle = "#0f172a"
         ctx.font = "800 46px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        ctx.fillText(`THB ${amount.toFixed(2)}`, canvas.width / 2, 790)
+        ctx.fillText(`THB ${formatAmount(amount)}`, canvas.width / 2, 790)
 
         ctx.fillStyle = "#173f7a"
         ctx.font = "700 28px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
@@ -1028,6 +1040,7 @@ function buildSummaryText() {
                 {showPromptpayForm && (
                     <div className="flex gap-2">
                         <input
+                            ref={ownerPromptpayRef}
                             className="flex-1 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
                             placeholder="เบอร์พร้อมเพย์ที่ให้เพื่อนโอน"
                             value={ownerPromptpay}
@@ -1105,8 +1118,8 @@ function buildSummaryText() {
                 {hasReceiptTotal && (
                     <div className={`rounded-xl px-3 py-2 text-xs ${Math.abs(receiptDiff) < 0.01 ? "bg-emerald-900/30 text-emerald-300" : "bg-amber-900/30 text-amber-300"}`}>
                         {Math.abs(receiptDiff) < 0.01
-                            ? `ยอดตรงแล้ว: ฿${grandTotal.toFixed(2)}`
-                            : `ยอดรายการ ฿${grandTotal.toFixed(2)} | ต่างจากสลิป ${receiptDiff > 0 ? "ขาด" : "เกิน"} ฿${Math.abs(receiptDiff).toFixed(2)}`
+                            ? `ยอดตรงแล้ว: ฿${formatAmount(grandTotal)}`
+                            : `ยอดรายการ ฿${formatAmount(grandTotal)} | ต่างจากสลิป ${receiptDiff > 0 ? "ขาด" : "เกิน"} ฿${formatAmount(Math.abs(receiptDiff))}`
                         }
                     </div>
                 )}
@@ -1139,8 +1152,8 @@ function buildSummaryText() {
                 </div>
                 {discount > 0 && (
                     <div className="rounded-xl px-3 py-2 text-xs bg-emerald-900/30 text-emerald-300 space-y-1">
-                        <p>จะกระจายส่วนลดรวม ฿{discount.toFixed(2)} แบบ{discountMode === "weighted" ? "ตามสัดส่วนยอดเดิม" : "เฉลี่ยเท่ากัน"} โดยไม่เปลี่ยนยอดรวมจากสลิป</p>
-                        <p>ยอดที่ต้องเก็บหลังหักส่วนลด: ฿{collectTotal.toFixed(2)}</p>
+                        <p>จะกระจายส่วนลดรวม ฿{formatAmount(discount)} แบบ{discountMode === "weighted" ? "ตามสัดส่วนยอดเดิม" : "เฉลี่ยเท่ากัน"} โดยไม่เปลี่ยนยอดรวมจากสลิป</p>
+                        <p>ยอดที่ต้องเก็บหลังหักส่วนลด: ฿{formatAmount(collectTotal)}</p>
                     </div>
                 )}
             </div>
@@ -1228,7 +1241,7 @@ function buildSummaryText() {
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-emerald-400 text-sm">฿{item.price.toFixed(2)}</span>
+                                            <span className="text-emerald-400 text-sm">฿{formatAmount(item.price)}</span>
                                             <button onClick={() => startEditItem(item)} title="แก้ไข" aria-label="แก้ไข" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-gray-500 hover:bg-purple-600 hover:text-white">
                                                 <EditIcon />
                                             </button>
@@ -1272,7 +1285,7 @@ function buildSummaryText() {
 
                     <div className="flex justify-between text-sm pt-2 border-t border-gray-800">
                         <span className="text-gray-500">รวม</span>
-                        <span className="text-emerald-400 font-semibold">฿{grandTotal.toFixed(2)}</span>
+                        <span className="text-emerald-400 font-semibold">฿{formatAmount(grandTotal)}</span>
                     </div>
                 </div>
             )}
@@ -1379,7 +1392,7 @@ function buildSummaryText() {
                                         return (
                                             <div key={name} className="rounded-2xl border border-white/10 bg-[#10101a] p-3 text-center shadow-lg shadow-black/10">
                                                 <p className="truncate text-sm font-semibold text-white">{name}</p>
-                                                <p className="mt-0.5 text-xs font-semibold text-purple-300">฿{amount.toFixed(2)}</p>
+                                                <p className="mt-0.5 text-xs font-semibold text-purple-300">฿{formatAmount(amount)}</p>
                                                 <div className="my-3 rounded-2xl bg-white p-2">
                                                     <img src={qrCodes[name]} alt={`QR พร้อมเพย์ ${name}`} className="mx-auto aspect-square w-full max-w-36" />
                                                 </div>
@@ -1421,23 +1434,23 @@ function buildSummaryText() {
                         return (
                             <div key={item.id} className="flex justify-between text-sm">
                                 <span className="text-gray-300">{item.name}</span>
-                                <span className="text-emerald-400">฿{item.price.toFixed(2)}</span>
+                                <span className="text-emerald-400">฿{formatAmount(item.price)}</span>
                             </div>
                         )
                     })}
                     <div className="flex justify-between text-sm font-semibold pt-2 border-t border-gray-800 mt-2">
                         <span className="text-gray-400">รวม</span>
-                        <span className="text-emerald-400">฿{grandTotal.toFixed(2)}</span>
+                        <span className="text-emerald-400">฿{formatAmount(grandTotal)}</span>
                     </div>
                     {discount > 0 && (
                         <>
                             <div className="flex justify-between text-xs pt-2 text-emerald-300">
                                 <span>ส่วนลดรวม ({discountMode === "weighted" ? "ตามสัดส่วนยอด" : "เฉลี่ยเท่ากัน"})</span>
-                                <span>- ฿{discount.toFixed(2)}</span>
+                                <span>- ฿{formatAmount(discount)}</span>
                             </div>
                             <div className="flex justify-between text-sm font-semibold pt-2 border-t border-gray-800 mt-2">
                                 <span className="text-gray-400">ยอดเก็บหลังหัก</span>
-                                <span className="text-emerald-400">฿{collectTotal.toFixed(2)}</span>
+                                <span className="text-emerald-400">฿{formatAmount(collectTotal)}</span>
                             </div>
                         </>
                     )}
@@ -1472,7 +1485,7 @@ function buildSummaryText() {
         <div className="min-w-0 flex-1">
           <p className="text-base font-semibold text-white">{name}</p>
           {discount > 0 && (
-            <p className="text-xs text-emerald-600 mt-0.5">ก่อนลด ฿{beforeDiscount.toFixed(2)} • ลด ฿{discountCut.toFixed(2)}</p>
+            <p className="text-xs text-emerald-600 mt-0.5">ก่อนลด ฿{formatAmount(beforeDiscount)} • ลด ฿{formatAmount(discountCut)}</p>
           )}
           {ownerPayment?.promptpay && (
             <p className="text-xs text-gray-600 mt-1">โอนเข้า {ownerName}</p>
@@ -1489,7 +1502,7 @@ function buildSummaryText() {
           </div>
           <div className="text-right">
           <p className="text-xs text-gray-600">ยอดโอน</p>
-          <p className="text-2xl font-bold text-purple-300">฿{amount.toFixed(2)}</p>
+          <p className="text-2xl font-bold text-purple-300">฿{formatAmount(amount)}</p>
           </div>
         </div>
       </div>
@@ -1504,7 +1517,7 @@ function buildSummaryText() {
               <div className="mx-auto w-fit rounded-xl border border-slate-200 bg-slate-50 p-2">
                 <img src={qrCodes[name]} alt={`QR พร้อมเพย์ ${name}`} className="h-48 w-48 mx-auto" />
               </div>
-              <p className="mt-3 text-xl font-extrabold text-slate-900">฿{amount.toFixed(2)}</p>
+              <p className="mt-3 text-xl font-extrabold text-slate-900">฿{formatAmount(amount)}</p>
               <p className="mt-1 truncate text-sm font-bold text-blue-900">{name}</p>
               <p className="mt-1 text-xs font-semibold text-slate-700">พร้อมเพย์ {ownerPayment.promptpay}</p>
               <p className="text-[11px] text-slate-500">โอนเข้า {ownerName} · {round.name}</p>
@@ -1521,7 +1534,7 @@ function buildSummaryText() {
             return (
               <div key={item.id} className="flex justify-between text-xs text-gray-600 pt-1">
                 <span>{item.name}</span>
-                <span>฿{share.toFixed(2)}</span>
+                <span>฿{formatAmount(share)}</span>
               </div>
             )
           })}
