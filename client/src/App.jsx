@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-
 import { useState, useEffect } from "react"
 import LoginPage from "./components/LoginPage"
 import AuthCallback from "./components/AuthCallback"
+import LandingPage from "./components/LandingPage"
 import FriendsPage from "./components/FriendsPage"
 import RoundPage from "./components/RoundPage"
 import HistoryPage from "./components/HistoryPage"
@@ -11,7 +12,7 @@ import { api } from "./api"
 import { AdSlot, SupportLink } from "./components/Monetization"
 
 const TABS = [
-  { id: "/", label: "🍽️", desc: "รอบ" },
+  { id: "/app", label: "🍽️", desc: "รอบ" },
   { id: "/friends", label: "👥", desc: "เพื่อน" },
   { id: "/history", label: "🕐", desc: "ประวัติ" },
   { id: "/pro", label: "★", desc: "Pro" },
@@ -122,8 +123,12 @@ export default function App() {
     const metaDescription = document.querySelector('meta[name="description"]')
     const map = {
       "/": {
-        title: "Harbill | แยกบิลทริปง่าย ๆ",
-        description: "แยกบิลทริปกับเพื่อน สแกนสลิป และสรุปยอดพร้อม QR ได้ในที่เดียว",
+        title: "Harbill - แอปหารบิล สรุปยอด และสร้าง QR พร้อมเพย์",
+        description: "Harbill ช่วยหารบิลกับเพื่อน แยกค่าอาหาร สรุปยอดแต่ละคน และสร้าง QR พร้อมเพย์ให้โอนง่าย เหมาะกับร้านอาหาร ทริป และกลุ่มเพื่อน",
+      },
+      "/app": {
+        title: "Harbill | เปิดรอบหารบิล",
+        description: "เปิดรอบหารบิล เลือกเพื่อน เพิ่มรายการ และสรุปยอดพร้อม QR พร้อมเพย์ด้วย Harbill",
       },
       "/friends": {
         title: "Harbill | รายชื่อเพื่อนและกลุ่ม",
@@ -196,7 +201,7 @@ export default function App() {
 
   function handleEditRound(round) {
     setEditRound(round)
-    navigate("/")
+    navigate("/app")
   }
 
   // รอเช็ค token ก่อน render
@@ -210,14 +215,15 @@ export default function App() {
 
   return (
     <Routes>
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={
         // ถ้า login แล้ว redirect ไป / เลย
         localStorage.getItem("token")
-          ? <Navigate to="/" replace />
+          ? <Navigate to="/app" replace />
           : <LoginPage />
       } />
       <Route path="/auth" element={<AuthCallback />} />
-      <Route path="/" element={
+      <Route path="/app" element={
         <RequireAuth user={user} onLogout={handleLogout}>
           <RoundPage
             user={user}
@@ -246,6 +252,7 @@ export default function App() {
           <AdminPage />
         </RequireAuth>
       } />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
