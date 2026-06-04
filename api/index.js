@@ -1,6 +1,8 @@
 const express = require("express")
 const cors = require("cors")
 const bcrypt = require("bcryptjs")
+const crypto = require("crypto")
+const jwt = require("jsonwebtoken")
 const multer = require("multer")
 const passport = require("passport")
 const GoogleStrategy = require("passport-google-oauth20").Strategy
@@ -32,6 +34,8 @@ const upload = multer({
 })
 
 let aiUsageSchemaReady = false
+let monetizationSchemaReady = false
+let analyticsSchemaReady = false
 
 function dbErrorMessage(err) {
   if (err?.code === "ERR_OUT_OF_RANGE" || /offset.*out of range/i.test(err?.message || "")) {
@@ -57,6 +61,158 @@ async function ensureGoogleAuthSchema() {
   if (!existing.has("google_id")) {
     await db.query("ALTER TABLE users ADD COLUMN google_id VARCHAR(255) NULL UNIQUE")
   }
+}
+
+async function ensureMonetizationSchema() {
+  if (monetizationSchemaReady) return
+
+  const [columns] = await db.query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'users'
+      AND COLUMN_NAME IN ('plan', 'pro_until')
+  `)
+  const existing = new Set(columns.map(column => column.COLUMN_NAME))
+
+  if (!existing.has("plan")) {
+    await db.query("ALTER TABLE users ADD COLUMN plan VARCHAR(32) NOT NULL DEFAULT 'free'")
+  }
+
+  if (!existing.has("pro_until")) {
+    await db.query("ALTER TABLE users ADD COLUMN pro_until DATETIME NULL")
+  }
+
+  monetizationSchemaReady = true
+}
+
+function userPlan(user) {
+  const proUntil = user?.pro_until ? new Date(user.pro_until) : null
+  const active = user?.plan === "pro" && proUntil && proUntil.getTime() > Date.now()
+  return {
+    plan: active ? "pro" : "free",
+    isPro: Boolean(active),
+    pro_until: active ? user.pro_until : null
+  }
+}
+
+async function ensureAnalyticsSchema() {
+  if (analyticsSchemaReady) return
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS page_views (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NULL,
+      visitor_key VARCHAR(128) NOT NULL,
+      session_key VARCHAR(128) NULL,
+      path VARCHAR(512) NOT NULL,
+      hostname VARCHAR(255) NULL,
+      referrer TEXT NULL,
+      user_agent TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_page_views_created (created_at),
+      INDEX idx_page_views_user_created (user_id, created_at),
+      INDEX idx_page_views_visitor_created (visitor_key, created_at),
+      CONSTRAINT fk_page_views_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+
+  analyticsSchemaReady = true
+}
+
+function adminEmails() {
+  return String(process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function requireAdmin(req, res, next) {
+  const allowed = adminEmails()
+  const email = String(req.user?.email || "").toLowerCase()
+  const localOpen = allowed.length === 0 && process.env.NODE_ENV !== "production"
+  const token = String(req.headers["x-admin-token"] || "").replace("Bearer ", "")
+
+  if (!token) {
+    return res.status(401).json({ error: "Admin verification required" })
+  }
+
+  try {
+    const decoded = jwt.verify(token, SESSION_SECRET)
+    if (decoded?.scope !== "admin" || decoded?.userId !== req.user?.id) {
+      return res.status(401).json({ error: "Invalid admin session" })
+    }
+  } catch {
+    return res.status(401).json({ error: "Admin session expired" })
+  }
+
+  if (localOpen || allowed.includes(email)) return next()
+  return res.status(403).json({ error: "Admin access required" })
+}
+
+function base32ToBuffer(value) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+  const clean = String(value || "").replace(/=+$/g, "").replace(/\s+/g, "").toUpperCase()
+  let bits = ""
+
+  for (const char of clean) {
+    const index = alphabet.indexOf(char)
+    if (index === -1) continue
+    bits += index.toString(2).padStart(5, "0")
+  }
+
+  const bytes = []
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    bytes.push(parseInt(bits.slice(i, i + 8), 2))
+  }
+  return Buffer.from(bytes)
+}
+
+function hotp(secret, counter) {
+  const key = base32ToBuffer(secret)
+  if (key.length === 0) return null
+
+  const buffer = Buffer.alloc(8)
+  buffer.writeUInt32BE(Math.floor(counter / 0x100000000), 0)
+  buffer.writeUInt32BE(counter >>> 0, 4)
+
+  const hmac = crypto.createHmac("sha1", key).update(buffer).digest()
+  const offset = hmac[hmac.length - 1] & 0xf
+  const code = (
+    ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff)
+  ) % 1000000
+
+  return String(code).padStart(6, "0")
+}
+
+function verifyTotp(secret, code) {
+  const clean = String(code || "").replace(/\D/g, "")
+  if (!/^\d{6}$/.test(clean)) return false
+
+  const counter = Math.floor(Date.now() / 30000)
+  for (let drift = -1; drift <= 1; drift++) {
+    if (hotp(secret, counter + drift) === clean) return true
+  }
+  return false
+}
+
+async function optionalAuth(req, res, next) {
+  const header = req.headers.authorization
+  if (!header) return next()
+
+  const token = header.replace("Bearer ", "")
+  try {
+    const jwt = require("jsonwebtoken")
+    const decoded = jwt.verify(token, process.env.JWT_SECRET)
+    const [rows] = await db.query("SELECT * FROM users WHERE id = ?", [decoded.id])
+    req.user = rows[0] || null
+  } catch {
+    req.user = null
+  }
+  next()
 }
 
 async function ensureAiUsageSchema() {
@@ -98,6 +254,12 @@ async function ensureAiUsageSchema() {
 async function checkAiScanLimit(userId) {
   const limit = Number(process.env.FREE_SCAN_DAILY_LIMIT || 5)
   await ensureAiUsageSchema()
+  await ensureMonetizationSchema()
+
+  const [userRows] = await db.query("SELECT plan, pro_until FROM users WHERE id=?", [userId])
+  if (userPlan(userRows[0]).isPro) {
+    return { allowed: true, source: "pro", limit: null, used: 0, paidCredits: 0 }
+  }
 
   const [rows] = await db.query(
     "SELECT scans FROM ai_scan_usage WHERE user_id=? AND usage_date=CURRENT_DATE",
@@ -286,9 +448,182 @@ app.post("/auth/login", async (req, res) => {
   res.json({ token: signToken(user), user: { id: user.id, email: user.email, name: user.name, avatar: user.avatar } })
 })
 
-app.get("/auth/me", requireAuth, (req, res) => {
-  const { id, email, name, avatar } = req.user
-  res.json({ id, email, name, avatar })
+app.get("/auth/me", requireAuth, async (req, res) => {
+  await ensureMonetizationSchema()
+  const [rows] = await db.query("SELECT id, email, name, avatar, plan, pro_until FROM users WHERE id=?", [req.user.id])
+  const user = rows[0] || req.user
+  const { id, email, name, avatar } = user
+  res.json({ id, email, name, avatar, ...userPlan(user) })
+})
+
+app.post("/analytics/page-view", optionalAuth, async (req, res) => {
+  await ensureAnalyticsSchema()
+
+  const visitorKey = String(req.body.visitorKey || "").slice(0, 128)
+  const sessionKey = String(req.body.sessionKey || "").slice(0, 128)
+  const path = String(req.body.path || req.path || "/").slice(0, 512)
+  const hostname = String(req.body.hostname || req.hostname || "").slice(0, 255)
+  const referrer = String(req.body.referrer || "").slice(0, 2048)
+  const userAgent = String(req.headers["user-agent"] || "").slice(0, 2048)
+
+  if (!visitorKey) return res.status(400).json({ error: "Missing visitor key" })
+
+  await db.query(
+    "INSERT INTO page_views (user_id, visitor_key, session_key, path, hostname, referrer, user_agent) VALUES (?,?,?,?,?,?,?)",
+    [req.user?.id || null, visitorKey, sessionKey || null, path, hostname || null, referrer || null, userAgent || null]
+  )
+
+  res.json({ ok: true })
+})
+
+app.post("/admin/session", requireAuth, async (req, res) => {
+  const allowed = adminEmails()
+  const email = String(req.user?.email || "").toLowerCase()
+  const localOpen = allowed.length === 0 && process.env.NODE_ENV !== "production"
+
+  if (!localOpen && !allowed.includes(email)) {
+    return res.status(403).json({ error: "Admin access required" })
+  }
+
+  const password = String(req.body.password || "")
+  const code = String(req.body.code || "")
+  const passwordHash = process.env.ADMIN_PASSWORD_HASH
+  const passwordPlain = process.env.ADMIN_PASSWORD
+  const totpSecret = process.env.ADMIN_TOTP_SECRET
+
+  if (!passwordHash && !passwordPlain && process.env.NODE_ENV === "production") {
+    return res.status(500).json({ error: "ADMIN_PASSWORD or ADMIN_PASSWORD_HASH is not configured" })
+  }
+
+  if (!totpSecret && process.env.NODE_ENV === "production") {
+    return res.status(500).json({ error: "ADMIN_TOTP_SECRET is not configured" })
+  }
+
+  const passwordOk = passwordHash
+    ? await bcrypt.compare(password, passwordHash)
+    : password === (passwordPlain || "admin")
+
+  const totpOk = totpSecret
+    ? verifyTotp(totpSecret, code)
+    : process.env.NODE_ENV !== "production" && code === "000000"
+
+  if (!passwordOk || !totpOk) {
+    return res.status(401).json({ error: "Invalid admin password or authenticator code" })
+  }
+
+  const expiresInSeconds = 2 * 60 * 60
+  const token = jwt.sign(
+    { scope: "admin", userId: req.user.id, email },
+    SESSION_SECRET,
+    { expiresIn: expiresInSeconds }
+  )
+
+  res.json({
+    token,
+    expiresAt: new Date(Date.now() + expiresInSeconds * 1000).toISOString()
+  })
+})
+
+app.get("/admin/summary", requireAuth, requireAdmin, async (req, res) => {
+  await ensureMonetizationSchema()
+  await ensureAnalyticsSchema()
+  await ensureAiUsageSchema()
+
+  const aiScanCost = Number(process.env.AI_SCAN_COST_THB || 0)
+  const serverMonthlyCost = Number(process.env.SERVER_MONTHLY_COST_THB || 0)
+
+  const [
+    [usersRows],
+    [proRows],
+    [roundRows],
+    [itemRows],
+    [scanRows],
+    [viewRows],
+    [visitorRows],
+    [domainRows],
+    [pathRows],
+    [recentUsers],
+  ] = await Promise.all([
+    db.query("SELECT COUNT(*) total, SUM(created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)) last7 FROM users"),
+    db.query("SELECT COUNT(*) activePro FROM users WHERE plan='pro' AND pro_until > NOW()"),
+    db.query("SELECT COUNT(*) total, SUM(created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)) last7, SUM(closed_at IS NOT NULL) closed FROM rounds"),
+    db.query("SELECT COUNT(*) total, COALESCE(SUM(price),0) totalValue FROM items"),
+    db.query("SELECT COALESCE(SUM(scans),0) total, COALESCE(SUM(CASE WHEN usage_date >= CURRENT_DATE - INTERVAL 7 DAY THEN scans ELSE 0 END),0) last7 FROM ai_scan_usage"),
+    db.query("SELECT COUNT(*) total, SUM(created_at >= CURRENT_DATE) today, SUM(created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)) last7 FROM page_views"),
+    db.query("SELECT COUNT(DISTINCT visitor_key) total, COUNT(DISTINCT CASE WHEN created_at >= CURRENT_DATE THEN visitor_key END) today, COUNT(DISTINCT CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN visitor_key END) last7 FROM page_views"),
+    db.query("SELECT COALESCE(hostname, 'unknown') hostname, COUNT(*) views, COUNT(DISTINCT visitor_key) visitors FROM page_views GROUP BY COALESCE(hostname, 'unknown') ORDER BY views DESC LIMIT 8"),
+    db.query("SELECT path, COUNT(*) views, COUNT(DISTINCT visitor_key) visitors FROM page_views GROUP BY path ORDER BY views DESC LIMIT 8"),
+    db.query("SELECT id, email, name, plan, pro_until, created_at FROM users ORDER BY created_at DESC LIMIT 8"),
+  ])
+
+  const scansTotal = Number(scanRows[0]?.total || 0)
+  const estimatedAiCost = scansTotal * (Number.isFinite(aiScanCost) ? aiScanCost : 0)
+  const monthlyCost = Number.isFinite(serverMonthlyCost) ? serverMonthlyCost : 0
+
+  res.json({
+    generatedAt: new Date().toISOString(),
+    environment: {
+      nodeEnv: process.env.NODE_ENV || "development",
+      apiBaseUrl: API_BASE_URL,
+      clientUrl: CLIENT_URL,
+      requestHost: req.headers.host || "",
+      configuredDomains: [CLIENT_URL, API_BASE_URL].filter(Boolean),
+    },
+    totals: {
+      users: Number(usersRows[0]?.total || 0),
+      usersLast7: Number(usersRows[0]?.last7 || 0),
+      activePro: Number(proRows[0]?.activePro || 0),
+      rounds: Number(roundRows[0]?.total || 0),
+      roundsLast7: Number(roundRows[0]?.last7 || 0),
+      closedRounds: Number(roundRows[0]?.closed || 0),
+      items: Number(itemRows[0]?.total || 0),
+      itemValue: Number(itemRows[0]?.totalValue || 0),
+      scans: scansTotal,
+      scansLast7: Number(scanRows[0]?.last7 || 0),
+      pageViews: Number(viewRows[0]?.total || 0),
+      pageViewsToday: Number(viewRows[0]?.today || 0),
+      pageViewsLast7: Number(viewRows[0]?.last7 || 0),
+      visitors: Number(visitorRows[0]?.total || 0),
+      visitorsToday: Number(visitorRows[0]?.today || 0),
+      visitorsLast7: Number(visitorRows[0]?.last7 || 0),
+    },
+    costs: {
+      aiScanCostThb: Number.isFinite(aiScanCost) ? aiScanCost : 0,
+      estimatedAiCostThb: estimatedAiCost,
+      serverMonthlyCostThb: monthlyCost,
+      estimatedTotalCostThb: estimatedAiCost + monthlyCost,
+    },
+    domains: domainRows,
+    topPaths: pathRows,
+    recentUsers: recentUsers.map(user => ({
+      ...user,
+      isPro: userPlan(user).isPro
+    })),
+  })
+})
+
+app.get("/billing/pro-status", requireAuth, async (req, res) => {
+  await ensureMonetizationSchema()
+  const [rows] = await db.query("SELECT plan, pro_until FROM users WHERE id=?", [req.user.id])
+  res.json(userPlan(rows[0]))
+})
+
+app.post("/billing/pro/mock-activate", requireAuth, async (req, res) => {
+  await ensureMonetizationSchema()
+  const days = Math.min(Math.max(Number(req.body.days) || 30, 1), 366)
+  const reference = String(req.body.reference || "").trim()
+
+  if (process.env.ENABLE_MANUAL_PRO_ACTIVATION !== "true" && process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "Manual Pro activation is disabled." })
+  }
+
+  await db.query(
+    "UPDATE users SET plan='pro', pro_until=DATE_ADD(GREATEST(COALESCE(pro_until, NOW()), NOW()), INTERVAL ? DAY) WHERE id=?",
+    [days, req.user.id]
+  )
+
+  const [rows] = await db.query("SELECT plan, pro_until FROM users WHERE id=?", [req.user.id])
+  res.json({ ok: true, reference, ...userPlan(rows[0]) })
 })
 
 // ── FRIENDS ───────────────────────────────────────────────────

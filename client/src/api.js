@@ -101,6 +101,25 @@ export const api = {
   googleLogin: () => { window.location.href = `${BASE}/auth/google` },
   clearCache: clearApiCache,
 
+  // Analytics / Admin
+  trackPageView: (data) => fetch(`${BASE}/analytics/page-view`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${getToken()}`
+    },
+    body: JSON.stringify(data)
+  }).then(r => r.ok).catch(() => false),
+  createAdminSession: (password, code) => post("/admin/session", { password, code }),
+  getAdminSummary: (adminToken) => req("/admin/summary", {
+    skipCache: true,
+    headers: { "x-admin-token": adminToken }
+  }),
+
+  // Billing
+  getProStatus: () => req("/billing/pro-status", { skipCache: true }),
+  activateProManual: (days, reference) => post("/billing/pro/mock-activate", { days, reference }),
+
   // Friends
   getFriends: () => req("/friends"),
   addFriend: (name) => post("/friends", { name }),

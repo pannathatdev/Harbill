@@ -5,6 +5,8 @@ import AuthCallback from "./components/AuthCallback"
 import FriendsPage from "./components/FriendsPage"
 import RoundPage from "./components/RoundPage"
 import HistoryPage from "./components/HistoryPage"
+import ProPage from "./components/ProPage"
+import AdminPage from "./components/AdminPage"
 import { api } from "./api"
 import { AdSlot, SupportLink } from "./components/Monetization"
 
@@ -12,7 +14,18 @@ const TABS = [
   { id: "/", label: "🍽️", desc: "รอบ" },
   { id: "/friends", label: "👥", desc: "เพื่อน" },
   { id: "/history", label: "🕐", desc: "ประวัติ" },
+  { id: "/pro", label: "★", desc: "Pro" },
 ]
+
+function analyticsId(key, storage = localStorage) {
+  const storageKey = `harbill:${key}`
+  let value = storage.getItem(storageKey)
+  if (!value) {
+    value = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+    storage.setItem(storageKey, value)
+  }
+  return value
+}
 
 function LogoutIcon() {
   return (
@@ -27,6 +40,7 @@ function LogoutIcon() {
 function Layout({ children, user, onLogout }) {
   const navigate = useNavigate()
   const path = window.location.pathname
+  const isPro = user?.isPro || user?.plan === "pro"
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 text-white">
@@ -53,10 +67,12 @@ function Layout({ children, user, onLogout }) {
 
       <div className="max-w-lg mx-auto px-4 pt-5 pb-28">
         {children}
-        <div className="mt-6 space-y-3">
-          <AdSlot className="overflow-hidden rounded-2xl bg-white/5 border border-white/10 px-2 py-3" />
-          <SupportLink />
-        </div>
+        {!isPro && (
+          <div className="mt-6 space-y-3">
+            <AdSlot className="overflow-hidden rounded-2xl bg-white/5 border border-white/10 px-2 py-3" />
+            <SupportLink />
+          </div>
+        )}
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-10">
@@ -126,6 +142,18 @@ export default function App() {
     document.title = seo.title
     if (metaDescription) metaDescription.setAttribute("content", seo.description)
   }, [location.pathname])
+
+  useEffect(() => {
+    const visitorKey = analyticsId("visitor")
+    const sessionKey = analyticsId("session", sessionStorage)
+    api.trackPageView({
+      visitorKey,
+      sessionKey,
+      path: `${location.pathname}${location.search}`,
+      hostname: window.location.hostname,
+      referrer: document.referrer,
+    })
+  }, [location.pathname, location.search])
 
   useEffect(() => {
     const token = localStorage.getItem("token")
@@ -202,7 +230,17 @@ export default function App() {
       } />
       <Route path="/history" element={
         <RequireAuth user={user} onLogout={handleLogout}>
-          <HistoryPage onEditRound={handleEditRound} />
+          <HistoryPage user={user} onEditRound={handleEditRound} />
+        </RequireAuth>
+      } />
+      <Route path="/pro" element={
+        <RequireAuth user={user} onLogout={handleLogout}>
+          <ProPage user={user} onUserUpdate={setUser} />
+        </RequireAuth>
+      } />
+      <Route path="/admin" element={
+        <RequireAuth user={user} onLogout={handleLogout}>
+          <AdminPage />
         </RequireAuth>
       } />
     </Routes>

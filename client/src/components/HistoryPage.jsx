@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import { api } from "../api"
 import { PageHeader } from "./HelpTip"
 
@@ -19,9 +20,15 @@ function ChevronIcon({ open }) {
     )
 }
 
-export default function HistoryPage({ onEditRound }) {
+const FREE_HISTORY_LIMIT = Number(import.meta.env.VITE_FREE_HISTORY_LIMIT || 10)
+
+export default function HistoryPage({ user, onEditRound }) {
     const [rounds, setRounds] = useState([])
     const [open, setOpen] = useState(null)
+    const navigate = useNavigate()
+    const isPro = user?.isPro || user?.plan === "pro"
+    const visibleRounds = isPro ? rounds : rounds.slice(0, FREE_HISTORY_LIMIT)
+    const hiddenCount = Math.max(0, rounds.length - visibleRounds.length)
 
     useEffect(() => { load() }, [])
 
@@ -51,9 +58,26 @@ export default function HistoryPage({ onEditRound }) {
                 <p className="text-sm font-semibold text-emerald-200">ทริปหน้าใช้ Harbill ต่อได้เลย</p>
                 <p className="mt-1 text-xs text-emerald-100/70">กลับมาเปิดรอบใหม่ได้ทันที และใช้รายชื่อเดิมซ้ำได้</p>
             </div>
+            {!isPro && hiddenCount > 0 && (
+                <div className="rounded-2xl border border-purple-500/30 bg-purple-500/10 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <p className="text-sm font-semibold text-purple-100">Free ดูประวัติล่าสุด {FREE_HISTORY_LIMIT} รอบ</p>
+                            <p className="mt-1 text-xs text-purple-100/70">มีอีก {hiddenCount} รอบที่เก็บไว้แล้ว อัปเกรด Pro เพื่อดูประวัติทั้งหมดและปิดโฆษณา</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => navigate("/pro")}
+                            className="shrink-0 rounded-xl bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-500"
+                        >
+                            Pro
+                        </button>
+                    </div>
+                </div>
+            )}
             {rounds.length === 0
                 ? <div className="bg-[#1c1c2e] rounded-2xl p-8 text-center text-gray-700 text-sm">ยังไม่มีประวัติ</div>
-                : rounds.map(r => {
+                : visibleRounds.map(r => {
                     const total = r.items.reduce((s, i) => s + i.price, 0)
                     const date = new Date(r.created_at).toLocaleDateString("th-TH", {
                         year: "numeric", month: "short", day: "numeric"

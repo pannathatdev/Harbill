@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(255) NOT NULL,
   avatar TEXT NULL,
   google_id VARCHAR(255) NULL UNIQUE,
+  plan VARCHAR(32) NOT NULL DEFAULT 'free',
+  pro_until DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -106,4 +108,20 @@ CREATE TABLE IF NOT EXISTS scan_credit_transactions (
   UNIQUE KEY uniq_scan_credit_reference (reference),
   INDEX idx_scan_credit_transactions_user_id (user_id),
   CONSTRAINT fk_scan_credit_transactions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS page_views (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NULL,
+  visitor_key VARCHAR(128) NOT NULL,
+  session_key VARCHAR(128) NULL,
+  path VARCHAR(512) NOT NULL,
+  hostname VARCHAR(255) NULL,
+  referrer TEXT NULL,
+  user_agent TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_page_views_created (created_at),
+  INDEX idx_page_views_user_created (user_id, created_at),
+  INDEX idx_page_views_visitor_created (visitor_key, created_at),
+  CONSTRAINT fk_page_views_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

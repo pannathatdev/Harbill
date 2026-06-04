@@ -880,6 +880,7 @@ function buildSummaryText() {
     const receiptDiff = hasReceiptTotal ? parsedReceiptTotal - grandTotal : 0
     const ownerName = user?.name || "เจ้าของบิล"
     const ownerPayment = paymentInfo[ownerName]
+    const isPro = user?.isPro || user?.plan === "pro"
     const totalsKey = selected.map(name => `${name}:${(totals[name] || 0).toFixed(2)}`).join("|")
 
     useEffect(() => {
@@ -1335,8 +1336,12 @@ function buildSummaryText() {
                 </button>
             </div>
 
-            <SupportCard />
-            <AffiliateBanner />
+            {!isPro && (
+                <>
+                    <SupportCard />
+                    <AffiliateBanner />
+                </>
+            )}
 
             {/* preview ข้อความ */}
             <div className="bg-[#1c1c2e] rounded-2xl p-4">
