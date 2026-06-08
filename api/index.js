@@ -36,6 +36,7 @@ const upload = multer({
 let aiUsageSchemaReady = false
 let monetizationSchemaReady = false
 let analyticsSchemaReady = false
+let duesSchemaReady = false
 const adminSessionAttempts = new Map()
 
 function dbErrorMessage(err) {
@@ -142,6 +143,34 @@ async function ensureAnalyticsSchema() {
   `)
 
   analyticsSchemaReady = true
+}
+
+async function ensureDuesSchema() {
+  if (duesSchemaReady) return
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS dues (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      person_name VARCHAR(255) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      amount DECIMAL(10,2) NOT NULL,
+      due_month CHAR(7) NOT NULL,
+      status VARCHAR(32) NOT NULL DEFAULT 'unpaid',
+      note TEXT NULL,
+      slip_name VARCHAR(255) NULL,
+      slip_type VARCHAR(128) NULL,
+      slip_uploaded_at DATETIME NULL,
+      paid_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_dues_user_month (user_id, due_month),
+      INDEX idx_dues_user_status (user_id, status),
+      CONSTRAINT fk_dues_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+
+  duesSchemaReady = true
 }
 
 function adminEmails() {
@@ -1101,6 +1130,139 @@ app.post("/payment-info", requireAuth, async (req, res) => {
 
 app.delete("/payment-info/:name", requireAuth, async (req, res) => {
   await db.query("DELETE FROM payment_info WHERE user_id=? AND friend_name=?", [req.user.id, req.params.name])
+  res.json({ ok: true })
+})
+
+// ── DUES ──────────────────────────────────────────────────────
+function mapDue(row) {
+  return {
+    id: row.id,
+    person: row.person_name,
+    title: row.title,
+    amount: parseFloat(row.amount),
+    month: row.due_month,
+    status: row.status,
+    note: row.note || "",
+    slipName: row.slip_name || "",
+    slipType: row.slip_type || "",
+    paidAt: row.paid_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+app.get("/dues", requireAuth, async (req, res) => {
+  await ensureDuesSchema()
+  const month = String(req.query.month || "").slice(0, 7)
+  const status = String(req.query.status || "")
+  const clauses = ["user_id=?"]
+  const values = [req.user.id]
+
+  if (/^\d{4}-\d{2}$/.test(month)) {
+    clauses.push("due_month=?")
+    values.push(month)
+  }
+  if (["unpaid", "pending", "paid"].includes(status)) {
+    clauses.push("status=?")
+    values.push(status)
+  }
+
+  const [rows] = await db.query(`
+    SELECT * FROM dues
+    WHERE ${clauses.join(" AND ")}
+    ORDER BY due_month DESC, person_name ASC, created_at DESC
+  `, values)
+  res.json(rows.map(mapDue))
+})
+
+app.post("/dues", requireAuth, async (req, res) => {
+  await ensureDuesSchema()
+  const person = String(req.body.person || "").trim()
+  const title = String(req.body.title || "").trim()
+  const amount = parseFloat(req.body.amount)
+  const month = String(req.body.month || "").trim().slice(0, 7)
+  const note = String(req.body.note || "").trim()
+
+  if (!person || !title || Number.isNaN(amount) || !/^\d{4}-\d{2}$/.test(month)) {
+    return res.status(400).json({ error: "Invalid due item" })
+  }
+
+  const [result] = await db.query(`
+    INSERT INTO dues (user_id, person_name, title, amount, due_month, status, note)
+    VALUES (?, ?, ?, ?, ?, 'unpaid', ?)
+  `, [req.user.id, person, title, amount, month, note || null])
+
+  const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [result.insertId, req.user.id])
+  res.json(mapDue(rows[0]))
+})
+
+app.patch("/dues/:id", requireAuth, async (req, res) => {
+  await ensureDuesSchema()
+  const fields = []
+  const values = []
+
+  if (req.body.person !== undefined) {
+    const person = String(req.body.person || "").trim()
+    if (!person) return res.status(400).json({ error: "Invalid person" })
+    fields.push("person_name=?")
+    values.push(person)
+  }
+  if (req.body.title !== undefined) {
+    const title = String(req.body.title || "").trim()
+    if (!title) return res.status(400).json({ error: "Invalid title" })
+    fields.push("title=?")
+    values.push(title)
+  }
+  if (req.body.amount !== undefined) {
+    const amount = parseFloat(req.body.amount)
+    if (Number.isNaN(amount)) return res.status(400).json({ error: "Invalid amount" })
+    fields.push("amount=?")
+    values.push(amount)
+  }
+  if (req.body.month !== undefined) {
+    const month = String(req.body.month || "").trim().slice(0, 7)
+    if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: "Invalid month" })
+    fields.push("due_month=?")
+    values.push(month)
+  }
+  if (req.body.note !== undefined) {
+    fields.push("note=?")
+    values.push(String(req.body.note || "").trim() || null)
+  }
+  if (req.body.status !== undefined) {
+    const status = String(req.body.status || "")
+    if (!["unpaid", "pending", "paid"].includes(status)) return res.status(400).json({ error: "Invalid status" })
+    fields.push("status=?")
+    values.push(status)
+    fields.push("paid_at=?")
+    values.push(status === "paid" ? new Date() : null)
+  }
+
+  if (fields.length === 0) return res.status(400).json({ error: "No changes" })
+
+  values.push(req.params.id, req.user.id)
+  await db.query(`UPDATE dues SET ${fields.join(", ")} WHERE id=? AND user_id=?`, values)
+  const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
+  if (!rows[0]) return res.status(404).json({ error: "Due item not found" })
+  res.json(mapDue(rows[0]))
+})
+
+app.post("/dues/:id/slip", requireAuth, upload.single("slip"), async (req, res) => {
+  await ensureDuesSchema()
+  if (!req.file) return res.status(400).json({ error: "Slip file required" })
+  await db.query(`
+    UPDATE dues
+    SET status='pending', slip_name=?, slip_type=?, slip_uploaded_at=NOW()
+    WHERE id=? AND user_id=?
+  `, [req.file.originalname, req.file.mimetype, req.params.id, req.user.id])
+  const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
+  if (!rows[0]) return res.status(404).json({ error: "Due item not found" })
+  res.json(mapDue(rows[0]))
+})
+
+app.delete("/dues/:id", requireAuth, async (req, res) => {
+  await ensureDuesSchema()
+  await db.query("DELETE FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
   res.json({ ok: true })
 })
 

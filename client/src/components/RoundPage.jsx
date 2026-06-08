@@ -547,7 +547,7 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
         if (!file) return
         setScanning(true)
         setScanError("")
-        setScanMessage("")
+        setScanMessage("กำลังอ่านสลิปและเตรียมรายการ...")
         try {
             const { items: scanned, error } = await api.scanReceipt(file)
             if (error) throw new Error(error)
@@ -558,8 +558,13 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
                 }))
                 .filter(item => item.name && !Number.isNaN(item.price))
 
+            const createdItems = []
             for (const item of validItems) {
-                await addItemToRound(item.name, item.price, selected)
+                const created = await api.addItem(round.id, item.name, item.price, selected)
+                createdItems.push(created)
+            }
+            if (createdItems.length > 0) {
+                setItems(prev => [...prev, ...createdItems])
             }
 
             setScanMessage(validItems.length > 0
@@ -1256,8 +1261,18 @@ function buildSummaryText() {
                 <label className={`flex items-center justify-center gap-2 border-2 border-dashed rounded-xl p-4 cursor-pointer transition-colors ${scanning ? "border-purple-500 text-purple-400" : "border-gray-700 hover:border-purple-500 text-gray-500"
                     }`}>
                     <input type="file" accept="image/*" className="hidden" onChange={handleScan} disabled={scanning} />
-                    {scanning ? "กำลังอ่าน AI..." : "แตะเพื่ออัปโหลดสลิป / เมนู"}
+                    {scanning ? (
+                        <span className="inline-flex items-center gap-2">
+                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+                            กำลังอ่านสลิปและจัดรายการ...
+                        </span>
+                    ) : "แตะเพื่ออัปโหลดสลิป / เมนู"}
                 </label>
+                {scanning && (
+                    <div className="mt-3 rounded-xl border border-purple-500/20 bg-purple-500/10 px-3 py-2 text-xs leading-5 text-purple-200">
+                        ระบบจะแสดงรายการหลังอ่านสลิปและบันทึกครบทั้งหมด เพื่อไม่ให้รายการกระพริบทีละแถว
+                    </div>
+                )}
                 {scanError && <p className="text-red-400 text-xs mt-2">{scanError}</p>}
                 {scanMessage && <p className="text-emerald-400 text-xs mt-2">{scanMessage}</p>}
                 <p className="mt-2 text-[11px] text-gray-500">บันทึกแล้ว กลับมาใช้ Harbill ทริปถัดไปได้เลย</p>

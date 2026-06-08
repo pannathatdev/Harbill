@@ -165,6 +165,30 @@ export const api = {
   savePaymentInfo: (data) => post("/payment-info", data, { invalidate: ["/payment-info"] }),
   deletePaymentInfo: (name) => del(`/payment-info/${name}`, { invalidate: ["/payment-info"] }),
 
+  // Dues
+  getDues: (params = {}) => {
+    const query = new URLSearchParams()
+    if (params.month) query.set("month", params.month)
+    if (params.status && params.status !== "all") query.set("status", params.status)
+    return req(`/dues${query.toString() ? `?${query}` : ""}`, { skipCache: true })
+  },
+  addDue: (data) => post("/dues", data),
+  updateDue: (id, data) => patch(`/dues/${id}`, data),
+  attachDueSlip: (id, file) => {
+    const form = new FormData()
+    form.append("slip", file)
+    return fetch(`${BASE}/dues/${id}/slip`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${getToken()}` },
+      body: form
+    }).then(async r => {
+      const data = await r.json()
+      if (!r.ok) throw new Error(data?.error || "Upload failed")
+      clearApiCache(["/dues"])
+      return data
+    })
+  },
+
   // Scan
   scanReceipt: (file) => {
     const form = new FormData()

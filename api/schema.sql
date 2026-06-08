@@ -83,6 +83,26 @@ CREATE TABLE IF NOT EXISTS payment_info (
   CONSTRAINT fk_payment_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS dues (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  person_name VARCHAR(255) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  due_month CHAR(7) NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'unpaid',
+  note TEXT NULL,
+  slip_name VARCHAR(255) NULL,
+  slip_type VARCHAR(128) NULL,
+  slip_uploaded_at DATETIME NULL,
+  paid_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_dues_user_month (user_id, due_month),
+  INDEX idx_dues_user_status (user_id, status),
+  CONSTRAINT fk_dues_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS ai_scan_usage (
   user_id INT NOT NULL,
   usage_date DATE NOT NULL,
