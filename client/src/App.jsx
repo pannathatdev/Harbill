@@ -6,16 +6,18 @@ import LandingPage from "./components/LandingPage"
 import FriendsPage from "./components/FriendsPage"
 import RoundPage from "./components/RoundPage"
 import HistoryPage from "./components/HistoryPage"
+import DuesPage from "./components/DuesPage"
 import ProPage from "./components/ProPage"
 import AdminPage from "./components/AdminPage"
 import { api } from "./api"
 import { AdSlot, SupportLink } from "./components/Monetization"
 
 const TABS = [
-  { id: "/app", label: "🍽️", desc: "รอบ" },
-  { id: "/friends", label: "👥", desc: "เพื่อน" },
-  { id: "/history", label: "🕐", desc: "ประวัติ" },
-  { id: "/pro", label: "★", desc: "Pro" },
+  { id: "/app", label: "บิล", desc: "รอบ" },
+  { id: "/dues", label: "ค้าง", desc: "ยอด" },
+  { id: "/friends", label: "คน", desc: "เพื่อน" },
+  { id: "/history", label: "เก่า", desc: "ประวัติ" },
+  { id: "/pro", label: "Pro", desc: "Pro" },
 ]
 
 function analyticsId(key, storage = localStorage) {
@@ -42,11 +44,12 @@ function Layout({ children, user, onLogout }) {
   const navigate = useNavigate()
   const path = window.location.pathname
   const isPro = user?.isPro || user?.plan === "pro"
+  const isWide = path === "/dues"
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 text-white">
-      <div className="sticky top-0 z-10 bg-black/25 backdrop-blur-sm border-b border-white/10">
-        <div className="max-w-lg mx-auto px-4 py-3 flex justify-between items-center">
+    <div className="min-h-screen bg-[#0f172a] text-white">
+      <div className="sticky top-0 z-10 border-b border-white/10 bg-slate-950/90 backdrop-blur-sm">
+        <div className={`${isWide ? "max-w-5xl" : "max-w-lg"} mx-auto px-4 py-3 flex justify-between items-center`}>
           <div className="flex items-center gap-2">
             <span className="text-xl">🍽️</span>
             <span className="font-bold text-white">Harbill</span>
@@ -66,9 +69,9 @@ function Layout({ children, user, onLogout }) {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 pt-5 pb-28">
+      <div className={`${isWide ? "max-w-5xl" : "max-w-lg"} mx-auto px-4 pt-5 pb-28`}>
         {children}
-        {!isPro && (
+        {!isPro && path !== "/dues" && (
           <div className="mt-6 space-y-3">
             <AdSlot className="overflow-hidden rounded-2xl bg-white/5 border border-white/10 px-2 py-3" />
             <SupportLink />
@@ -77,8 +80,8 @@ function Layout({ children, user, onLogout }) {
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-10">
-        <div className="max-w-lg mx-auto">
-          <div className="bg-black/40 backdrop-blur-sm border-t border-white/10 rounded-t-3xl">
+        <div className={`${isWide ? "max-w-5xl" : "max-w-lg"} mx-auto`}>
+          <div className="rounded-t-3xl border-t border-white/10 bg-slate-950/95 backdrop-blur-sm">
             <div className="flex">
               {TABS.map(t => {
                 const active = path === t.id
@@ -87,9 +90,9 @@ function Layout({ children, user, onLogout }) {
                     className={`flex-1 flex flex-col items-center py-3 gap-0.5 transition-all ${
                       active ? "text-white" : "text-white/30 hover:text-white/60"
                     }`}>
-                    <span className="text-xl">{t.label}</span>
-                    <span className={`text-xs font-medium ${active ? "text-purple-300" : ""}`}>{t.desc}</span>
-                    {active && <div className="w-1 h-1 rounded-full bg-purple-400 mt-0.5"></div>}
+                    <span className="text-sm font-black">{t.label}</span>
+                    <span className={`text-[11px] font-medium ${active ? "text-sky-300" : ""}`}>{t.desc}</span>
+                    {active && <div className="w-1 h-1 rounded-full bg-sky-400 mt-0.5"></div>}
                   </button>
                 )
               })}
@@ -137,6 +140,10 @@ export default function App() {
       "/history": {
         title: "Harbill (หารบิล) | ประวัติการหารบิล",
         description: "ดูประวัติรอบก่อนหน้า แก้ไขรายการ และกลับมาเริ่มทริปใหม่ได้ทันที",
+      },
+      "/dues": {
+        title: "Harbill | ยอดค้างและเช็กยอดโอน",
+        description: "บันทึกยอดค้างรายคน ดูว่าใครยังไม่จ่ายอะไร และติดตามสถานะการโอนในแต่ละเดือน",
       },
       "/login": {
         title: "Harbill (หารบิล) | เข้าสู่ระบบ",
@@ -240,6 +247,11 @@ export default function App() {
       <Route path="/history" element={
         <RequireAuth user={user} onLogout={handleLogout}>
           <HistoryPage user={user} onEditRound={handleEditRound} />
+        </RequireAuth>
+      } />
+      <Route path="/dues" element={
+        <RequireAuth user={user} onLogout={handleLogout}>
+          <DuesPage />
         </RequireAuth>
       } />
       <Route path="/pro" element={
