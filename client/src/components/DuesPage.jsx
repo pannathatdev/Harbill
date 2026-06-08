@@ -26,10 +26,10 @@ const copy = {
     markPaid: "รับเงินแล้ว",
     markUnpaid: "ยังไม่จ่าย",
     uploadSlip: "แนบสลิป",
+    copied: "คัดลอกแล้ว",
+    linkCopied: "คัดลอกลิงก์แล้ว",
+    slipAttached: "แนบสลิปแล้ว",
     noItems: "ไม่พบรายการตามตัวกรอง",
-    dark: "มืด",
-    light: "สว่าง",
-    language: "TH",
   },
   en: {
     title: "Dues",
@@ -56,10 +56,10 @@ const copy = {
     markPaid: "Mark paid",
     markUnpaid: "Mark unpaid",
     uploadSlip: "Attach slip",
+    copied: "Copied",
+    linkCopied: "Link copied",
+    slipAttached: "Slip attached",
     noItems: "No items match the filters",
-    dark: "Dark",
-    light: "Light",
-    language: "EN",
   },
 }
 
@@ -85,14 +85,13 @@ function statusStyle(status, darkMode) {
   return darkMode ? "bg-rose-500/12 text-rose-200" : "bg-rose-50 text-rose-700"
 }
 
-export default function DuesPage() {
-  const [lang, setLang] = useState("th")
-  const [darkMode, setDarkMode] = useState(false)
+export default function DuesPage({ lang = "th", darkMode = true }) {
   const [items, setItems] = useState(seedItems)
   const [status, setStatus] = useState("all")
   const [month, setMonth] = useState("2026-06")
   const [query, setQuery] = useState("")
   const [form, setForm] = useState({ person: "", title: "", amount: "", note: "" })
+  const [notice, setNotice] = useState("")
   const t = copy[lang]
 
   const filtered = useMemo(() => {
@@ -136,6 +135,58 @@ export default function DuesPage() {
     setItems(prev => prev.map(item => item.id === id ? { ...item, status: nextStatus } : item))
   }
 
+  function showNotice(message) {
+    setNotice(message)
+    window.setTimeout(() => setNotice(""), 1800)
+  }
+
+  async function copyToClipboard(text, message) {
+    try {
+      await navigator.clipboard.writeText(text)
+      showNotice(message)
+    } catch {
+      const textarea = document.createElement("textarea")
+      textarea.value = text
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand("copy")
+      document.body.removeChild(textarea)
+      showNotice(message)
+    }
+  }
+
+  function buildDuesText(person = null) {
+    const rows = filtered.filter(item => item.status !== "paid" && (!person || item.person === person))
+    const groupedRows = rows.reduce((map, item) => {
+      if (!map[item.person]) map[item.person] = []
+      map[item.person].push(item)
+      return map
+    }, {})
+
+    return Object.entries(groupedRows).map(([name, dues]) => {
+      const total = dues.reduce((sum, item) => sum + item.amount, 0)
+      const lines = dues.map(item => `- ${item.title}: ฿${formatMoney(item.amount)}`).join("\n")
+      return `${name}\n${t.outstanding}: ฿${formatMoney(total)}\n${lines}`
+    }).join("\n\n")
+  }
+
+  function copyAllDues() {
+    const text = buildDuesText() || t.noItems
+    copyToClipboard(text, t.copied)
+  }
+
+  function copyPaymentLink(person) {
+    const token = btoa(encodeURIComponent(`${person}:${month}`)).replace(/=+$/g, "")
+    const url = `${window.location.origin}/pay/${token}?name=${encodeURIComponent(person)}`
+    copyToClipboard(url, t.linkCopied)
+  }
+
+  function attachSlip(id, file) {
+    if (!file) return
+    setItems(prev => prev.map(item => item.id === id ? { ...item, status: "pending", note: `${t.slipAttached}: ${file.name}` } : item))
+    showNotice(t.slipAttached)
+  }
+
   const page = darkMode ? "bg-[#0f172a] text-slate-100" : "bg-[#f5f7fb] text-slate-950"
   const panel = darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"
   const muted = darkMode ? "text-slate-400" : "text-slate-500"
@@ -153,20 +204,11 @@ export default function DuesPage() {
               <h1 className="mt-1 text-2xl font-black tracking-normal">{t.title}</h1>
               <p className={`mt-2 max-w-2xl text-sm leading-6 ${muted}`}>{t.subtitle}</p>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setDarkMode(value => !value)}
-                className={`rounded-xl border px-3 py-2 text-xs font-semibold ${darkMode ? "border-slate-700 bg-slate-950 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-700"}`}
-              >
-                {darkMode ? t.dark : t.light}
-              </button>
-              <button
-                onClick={() => setLang(value => value === "th" ? "en" : "th")}
-                className={`rounded-xl border px-3 py-2 text-xs font-semibold ${darkMode ? "border-slate-700 bg-slate-950 text-slate-200" : "border-slate-200 bg-slate-50 text-slate-700"}`}
-              >
-                {t.language}
-              </button>
-            </div>
+            {notice && (
+              <div className={`rounded-xl px-3 py-2 text-xs font-bold ${darkMode ? "bg-sky-500/15 text-sky-200" : "bg-sky-50 text-sky-700"}`}>
+                {notice}
+              </div>
+            )}
           </div>
         </section>
 
@@ -212,7 +254,7 @@ export default function DuesPage() {
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-black">{t.byPerson}</h2>
-            <button className={`rounded-xl border px-3 py-2 text-xs font-semibold ${darkMode ? "border-slate-700 text-slate-300" : "border-slate-200 text-slate-600"}`}>
+            <button onClick={copyAllDues} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${darkMode ? "border-slate-700 text-slate-300" : "border-slate-200 text-slate-600"}`}>
               {t.copyText}
             </button>
           </div>
@@ -230,7 +272,7 @@ export default function DuesPage() {
                     <p className="text-base font-black">{person}</p>
                     <p className={`mt-1 text-xs ${muted}`}>{t.outstanding} ฿{formatMoney(outstanding)}</p>
                   </div>
-                  <button className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-700">
+                  <button onClick={() => copyPaymentLink(person)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-700">
                     {t.sendLink}
                   </button>
                 </div>
@@ -254,9 +296,15 @@ export default function DuesPage() {
                         >
                           {item.status === "paid" ? t.markUnpaid : t.markPaid}
                         </button>
-                        <button className={`rounded-xl border px-3 py-2 text-xs font-semibold ${darkMode ? "border-slate-700 text-slate-300" : "border-slate-200 text-slate-600"}`}>
+                        <label className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-semibold ${darkMode ? "border-slate-700 text-slate-300" : "border-slate-200 text-slate-600"}`}>
                           {t.uploadSlip}
-                        </button>
+                          <input
+                            type="file"
+                            accept="image/*,.pdf"
+                            className="hidden"
+                            onChange={e => attachSlip(item.id, e.target.files?.[0])}
+                          />
+                        </label>
                       </div>
                     </div>
                   ))}

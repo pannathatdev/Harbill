@@ -13,11 +13,11 @@ import { api } from "./api"
 import { AdSlot, SupportLink } from "./components/Monetization"
 
 const TABS = [
-  { id: "/app", label: "บิล", desc: "รอบ" },
-  { id: "/dues", label: "ค้าง", desc: "ยอด" },
-  { id: "/friends", label: "คน", desc: "เพื่อน" },
-  { id: "/history", label: "เก่า", desc: "ประวัติ" },
-  { id: "/pro", label: "Pro", desc: "Pro" },
+  { id: "/app", labelTh: "รอบบิล", descTh: "หารบิล", labelEn: "Bills", descEn: "Split" },
+  { id: "/dues", labelTh: "ยอดค้าง", descTh: "ติดตาม", labelEn: "Dues", descEn: "Track" },
+  { id: "/friends", labelTh: "รายชื่อ", descTh: "เพื่อน", labelEn: "Contacts", descEn: "People" },
+  { id: "/history", labelTh: "ประวัติ", descTh: "รอบเดิม", labelEn: "History", descEn: "Rounds" },
+  { id: "/pro", labelTh: "สมาชิก", descTh: "Pro", labelEn: "Plan", descEn: "Pro" },
 ]
 
 function analyticsId(key, storage = localStorage) {
@@ -40,28 +40,48 @@ function LogoutIcon() {
   )
 }
 
-function Layout({ children, user, onLogout }) {
+function Layout({ children, user, onLogout, lang, onLangChange, darkMode, onThemeChange }) {
   const navigate = useNavigate()
   const path = window.location.pathname
   const isPro = user?.isPro || user?.plan === "pro"
   const isWide = path === "/dues"
+  const shell = darkMode ? "bg-[#0f172a] text-white" : "bg-[#f5f7fb] text-slate-950"
+  const topbar = darkMode ? "border-white/10 bg-slate-950/90" : "border-slate-200 bg-white/95"
+  const brandText = darkMode ? "text-white" : "text-slate-950"
+  const mutedText = darkMode ? "text-white/70" : "text-slate-500"
+  const iconButton = darkMode
+    ? "border-white/10 bg-white/5 text-white/45 hover:border-red-400/40 hover:bg-red-500/10 hover:text-red-200"
+    : "border-slate-200 bg-slate-50 text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+  const nav = darkMode ? "border-white/10 bg-slate-950/95" : "border-slate-200 bg-white/95"
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-white">
-      <div className="sticky top-0 z-10 border-b border-white/10 bg-slate-950/90 backdrop-blur-sm">
+    <div className={`min-h-screen ${shell}`}>
+      <div className={`sticky top-0 z-10 border-b backdrop-blur-sm ${topbar}`}>
         <div className={`${isWide ? "max-w-5xl" : "max-w-lg"} mx-auto px-4 py-3 flex justify-between items-center`}>
           <div className="flex items-center gap-2">
             <span className="text-xl">🍽️</span>
-            <span className="font-bold text-white">Harbill</span>
+            <span className={`font-bold ${brandText}`}>Harbill</span>
           </div>
           <div className="flex items-center gap-3">
             {user?.avatar && <img src={user.avatar} className="w-7 h-7 rounded-full" alt="" />}
-            <span className="text-sm text-white/70">{user?.name}</span>
+            <span className={`hidden text-sm sm:inline ${mutedText}`}>{user?.name}</span>
+            <button
+              onClick={onThemeChange}
+              className={`rounded-xl border px-2.5 py-1.5 text-xs font-bold ${darkMode ? "border-white/10 bg-white/5 text-white/70" : "border-slate-200 bg-slate-50 text-slate-600"}`}
+            >
+              {darkMode ? "Dark" : "Light"}
+            </button>
+            <button
+              onClick={onLangChange}
+              className={`rounded-xl border px-2.5 py-1.5 text-xs font-bold ${darkMode ? "border-white/10 bg-white/5 text-white/70" : "border-slate-200 bg-slate-50 text-slate-600"}`}
+            >
+              {lang === "th" ? "TH" : "EN"}
+            </button>
             <button
               onClick={onLogout}
               title="ออกจากระบบ"
               aria-label="ออกจากระบบ"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/45 transition-all hover:border-red-400/40 hover:bg-red-500/10 hover:text-red-200"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border transition-all ${iconButton}`}
             >
               <LogoutIcon />
             </button>
@@ -81,17 +101,21 @@ function Layout({ children, user, onLogout }) {
 
       <div className="fixed bottom-0 left-0 right-0 z-10">
         <div className={`${isWide ? "max-w-5xl" : "max-w-lg"} mx-auto`}>
-          <div className="rounded-t-3xl border-t border-white/10 bg-slate-950/95 backdrop-blur-sm">
+          <div className={`rounded-t-3xl border-t backdrop-blur-sm ${nav}`}>
             <div className="flex">
               {TABS.map(t => {
                 const active = path === t.id
+                const label = lang === "th" ? t.labelTh : t.labelEn
+                const desc = lang === "th" ? t.descTh : t.descEn
                 return (
                   <button key={t.id} onClick={() => navigate(t.id)}
                     className={`flex-1 flex flex-col items-center py-3 gap-0.5 transition-all ${
-                      active ? "text-white" : "text-white/30 hover:text-white/60"
+                      active
+                        ? darkMode ? "text-white" : "text-slate-950"
+                        : darkMode ? "text-white/35 hover:text-white/65" : "text-slate-400 hover:text-slate-700"
                     }`}>
-                    <span className="text-sm font-black">{t.label}</span>
-                    <span className={`text-[11px] font-medium ${active ? "text-sky-300" : ""}`}>{t.desc}</span>
+                    <span className="text-sm font-black">{label}</span>
+                    <span className={`text-[11px] font-medium ${active ? "text-sky-300" : ""}`}>{desc}</span>
                     {active && <div className="w-1 h-1 rounded-full bg-sky-400 mt-0.5"></div>}
                   </button>
                 )
@@ -104,9 +128,9 @@ function Layout({ children, user, onLogout }) {
   )
 }
 
-function RequireAuth({ children, user, onLogout }) {
+function RequireAuth({ children, user, onLogout, lang, onLangChange, darkMode, onThemeChange }) {
   if (!localStorage.getItem("token")) return <Navigate to="/login" replace />
-  return <Layout user={user} onLogout={onLogout}>{children}</Layout>
+  return <Layout user={user} onLogout={onLogout} lang={lang} onLangChange={onLangChange} darkMode={darkMode} onThemeChange={onThemeChange}>{children}</Layout>
 }
 
 export default function App() {
@@ -119,8 +143,27 @@ export default function App() {
   })
   const [checking, setChecking] = useState(true)
   const [editRound, setEditRound] = useState(null)
+  const [lang, setLang] = useState(() => localStorage.getItem("harbill:lang") || "th")
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("harbill:theme") !== "light")
   const navigate = useNavigate()
   const location = useLocation()
+
+  useEffect(() => {
+    localStorage.setItem("harbill:lang", lang)
+  }, [lang])
+
+  useEffect(() => {
+    localStorage.setItem("harbill:theme", darkMode ? "dark" : "light")
+    document.documentElement.dataset.theme = darkMode ? "dark" : "light"
+  }, [darkMode])
+
+  function toggleLanguage() {
+    setLang(value => value === "th" ? "en" : "th")
+  }
+
+  function toggleTheme() {
+    setDarkMode(value => !value)
+  }
 
   useEffect(() => {
     const metaDescription = document.querySelector('meta[name="description"]')
@@ -231,7 +274,7 @@ export default function App() {
       } />
       <Route path="/auth" element={<AuthCallback />} />
       <Route path="/app" element={
-        <RequireAuth user={user} onLogout={handleLogout}>
+        <RequireAuth user={user} onLogout={handleLogout} lang={lang} onLangChange={toggleLanguage} darkMode={darkMode} onThemeChange={toggleTheme}>
           <RoundPage
             user={user}
             initialRound={editRound}
@@ -240,27 +283,27 @@ export default function App() {
         </RequireAuth>
       } />
       <Route path="/friends" element={
-        <RequireAuth user={user} onLogout={handleLogout}>
+        <RequireAuth user={user} onLogout={handleLogout} lang={lang} onLangChange={toggleLanguage} darkMode={darkMode} onThemeChange={toggleTheme}>
           <FriendsPage />
         </RequireAuth>
       } />
       <Route path="/history" element={
-        <RequireAuth user={user} onLogout={handleLogout}>
+        <RequireAuth user={user} onLogout={handleLogout} lang={lang} onLangChange={toggleLanguage} darkMode={darkMode} onThemeChange={toggleTheme}>
           <HistoryPage user={user} onEditRound={handleEditRound} />
         </RequireAuth>
       } />
       <Route path="/dues" element={
-        <RequireAuth user={user} onLogout={handleLogout}>
-          <DuesPage />
+        <RequireAuth user={user} onLogout={handleLogout} lang={lang} onLangChange={toggleLanguage} darkMode={darkMode} onThemeChange={toggleTheme}>
+          <DuesPage lang={lang} darkMode={darkMode} />
         </RequireAuth>
       } />
       <Route path="/pro" element={
-        <RequireAuth user={user} onLogout={handleLogout}>
+        <RequireAuth user={user} onLogout={handleLogout} lang={lang} onLangChange={toggleLanguage} darkMode={darkMode} onThemeChange={toggleTheme}>
           <ProPage user={user} onUserUpdate={setUser} />
         </RequireAuth>
       } />
       <Route path="/admin" element={
-        <RequireAuth user={user} onLogout={handleLogout}>
+        <RequireAuth user={user} onLogout={handleLogout} lang={lang} onLangChange={toggleLanguage} darkMode={darkMode} onThemeChange={toggleTheme}>
           <AdminPage />
         </RequireAuth>
       } />
