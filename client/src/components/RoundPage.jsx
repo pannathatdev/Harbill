@@ -728,12 +728,34 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
         setShowAddFriend(false)
     }
 
+    async function createDuesFromRound() {
+        const roundMonth = new Date().toISOString().slice(0, 7)
+        const totals = calcTotals()
+        const discount = Math.max(0, parseFloat(discountAmount) || 0)
+        const note = discount > 0
+            ? `${round.name} • หักส่วนลดรวม ฿${formatAmount(discount)} แล้ว`
+            : round.name
+
+        const dues = selected
+            .map(name => ({
+                person: name,
+                title: `ยอดหารบิล: ${round.name}`,
+                amount: totals[name] || 0,
+                month: roundMonth,
+                note,
+            }))
+            .filter(item => item.amount > 0)
+
+        await Promise.all(dues.map(item => api.addDue(item)))
+    }
+
     async function finishRound() {
         setSavingAction("finish")
         try {
             await flushPendingSplitSaves()
             await api.closeRound(round.id)
-            api.clearCache(["/rounds"])
+            await createDuesFromRound()
+            api.clearCache(["/rounds", "/dues"])
             setStep("summary")
         } catch (err) {
             alert(err.message || "บันทึกข้อมูลหารบิลไม่สำเร็จ ลองอีกครั้งนะครับ")
