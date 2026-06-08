@@ -229,27 +229,39 @@ export default function FriendsPage() {
     return null
   }
 
+  const paymentCount = Object.keys(paymentInfo).length
+  const groupMemberCount = groups.reduce((sum, group) => sum + group.members.length, 0)
+
   return (
     <>
       <PageHeader
         title="เพื่อน / กลุ่ม"
-        desc={
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            <li><b>เพื่อน</b> — เพิ่มชื่อเพื่อนไว้ที่นี่ก่อน ระบบจะจำไว้ตลอด ไม่ต้องพิมซ้ำทุกรอบ</li>
-            <li><b>กลุ่ม</b> — จัดกลุ่มเพื่อน เช่น "กลุ่มงาน" "กลุ่มบ้าน" ตอนเปิดรอบกดดึงทั้งกลุ่มมาได้เลยทีเดียว</li>
-            <li><b>บัญชี</b> — กด "+ บัญชี" ใส่เลขพร้อมเพย์หรือธนาคาร ตอนสรุปยอดจะแสดงให้เพื่อนโอนได้เลย</li>
-          </ul>
-        }
+        desc="จัดรายชื่อที่ใช้ซ้ำบ่อย ตั้งกลุ่มสำหรับเปิดรอบเร็วขึ้น และบันทึกบัญชีรับเงินของแต่ละคน"
       />
       <div className="space-y-4">
-      <div className="flex gap-2 mb-2">
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-2xl border border-white/10 bg-[#1c1c2e] p-3">
+          <p className="text-[11px] text-gray-500">เพื่อนทั้งหมด</p>
+          <p className="mt-1 text-xl font-black text-white">{friends.length}</p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-[#1c1c2e] p-3">
+          <p className="text-[11px] text-gray-500">กลุ่ม</p>
+          <p className="mt-1 text-xl font-black text-white">{groups.length}</p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-[#1c1c2e] p-3">
+          <p className="text-[11px] text-gray-500">บัญชี</p>
+          <p className="mt-1 text-xl font-black text-white">{paymentCount}</p>
+        </div>
+      </div>
+
+      <div className="flex rounded-2xl bg-[#13131f] p-1">
         {[
-          { id: "friends", label: "เพื่อน" },
-          { id: "groups", label: "กลุ่ม" },
+          { id: "friends", label: "รายชื่อเพื่อน" },
+          { id: "groups", label: "กลุ่มที่ใช้บ่อย" },
         ].map(v => (
           <button key={v.id} onClick={() => setView(v.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium ${
-              view === v.id ? "bg-purple-600 text-white" : "bg-[#252540] text-gray-400"
+            className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold transition-all ${
+              view === v.id ? "bg-purple-600 text-white" : "text-gray-500 hover:text-gray-300"
             }`}>
             {v.label}
           </button>
@@ -264,7 +276,10 @@ export default function FriendsPage() {
       {/* ── เพื่อน ── */}
       {!loading && view === "friends" && (
         <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-3">
-          <p className="text-xs text-gray-500">รายชื่อเพื่อนทั้งหมด</p>
+          <div>
+            <p className="text-sm font-semibold text-white">รายชื่อเพื่อน</p>
+            <p className="mt-1 text-xs text-gray-500">เพิ่มครั้งเดียว แล้วเลือกใช้ได้ทั้งในรอบใหม่และในกลุ่ม</p>
+          </div>
           <div className="flex gap-2">
             <input
               className="flex-1 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
@@ -378,7 +393,15 @@ export default function FriendsPage() {
       {!loading && view === "groups" && (
         <div className="space-y-3">
           <div className="bg-[#1c1c2e] rounded-2xl p-4">
-            <p className="text-xs text-gray-500 mb-3">สร้างกลุ่มใหม่</p>
+            <div className="mb-3 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-white">กลุ่มที่ใช้บ่อย</p>
+                <p className="mt-1 text-xs text-gray-500">ใช้เลือกทั้งกลุ่มตอนเปิดรอบใหม่ และเพิ่มสมาชิกได้จากหน้านี้หรือหน้าสร้างรอบ</p>
+              </div>
+              <span className="shrink-0 rounded-full bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-200">
+                สมาชิกซ้ำรวม {groupMemberCount}
+              </span>
+            </div>
             <div className="flex gap-2">
               <input
                 className="flex-1 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
@@ -395,6 +418,12 @@ export default function FriendsPage() {
               </button>
             </div>
           </div>
+
+          {groups.length === 0 && (
+            <div className="rounded-2xl bg-[#1c1c2e] p-5 text-center text-sm text-gray-600">
+              ยังไม่มีกลุ่ม สร้างกลุ่มแรกไว้ใช้เลือกเพื่อนทีเดียวตอนเปิดรอบ
+            </div>
+          )}
 
           {groups.map(group => (
             <div key={group.id} className="bg-[#1c1c2e] rounded-2xl p-4 space-y-3">

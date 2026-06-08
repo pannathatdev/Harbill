@@ -188,9 +188,13 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     const [paymentInfo, setPaymentInfo] = useState({})
     const manualNameRef = useRef(null)
     const ownerPromptpayRef = useRef(null)
+    const splitSaveTimersRef = useRef({})
+    const splitSaveVersionsRef = useRef({})
+    const pendingSplitSavesRef = useRef({})
 
     // เพิ่มเพื่อนใหม่ inline
     const [newFriendInput, setNewFriendInput] = useState("")
+    const [newGroupMemberInputs, setNewGroupMemberInputs] = useState({})
     const [showAddFriend, setShowAddFriend] = useState(false)
 
     useEffect(() => { loadFriends() }, [])
@@ -200,6 +204,12 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     useEffect(() => {
         if (showPromptpayForm) ownerPromptpayRef.current?.focus()
     }, [showPromptpayForm])
+
+    useEffect(() => {
+        return () => {
+            Object.values(splitSaveTimersRef.current).forEach(clearTimeout)
+        }
+    }, [])
 
     async function loadPaymentInfo() {
         const p = await api.getPaymentInfo()
@@ -468,6 +478,30 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
         setSelected(prev => [...prev, ...names])
     }
 
+    async function addGroupMemberFromSetup(group) {
+        const cleanName = String(newGroupMemberInputs[group.id] || "").trim()
+        if (!cleanName) return
+
+        const existingFriend = friends.find(f => f.name.trim().toLowerCase() === cleanName.toLowerCase())
+        const finalName = existingFriend?.name || cleanName
+
+        if (!existingFriend) {
+            try {
+                await api.addFriend(finalName)
+            } catch (err) {
+                if (!String(err.message || "").includes("ถูกใช้")) throw err
+            }
+        }
+
+        if (!group.members.includes(finalName)) {
+            await api.addGroupMember(group.id, finalName)
+        }
+
+        setNewGroupMemberInputs(prev => ({ ...prev, [group.id]: "" }))
+        setSelected(prev => prev.includes(finalName) ? prev : [...prev, finalName])
+        await loadFriends()
+    }
+
     async function addNameToRoundSelection(name) {
         const cleanName = String(name || "").trim()
         if (!cleanName) return
@@ -562,26 +596,68 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
         manualNameRef.current?.focus()
     }
 
-    async function toggleSplit(itemId, name) {
-        const item = items.find(i => i.id === itemId)
-        const current = item.splitWith || []
-        const updated = current.includes(name)
-            ? current.filter(n => n !== name)
-            : [...current, name]
-        await api.updateSplits(itemId, updated)
-        setItems(prev => prev.map(i => i.id === itemId ? { ...i, splitWith: updated } : i))
+    function saveItemSplitSoon(itemId, splitWith, fallbackSplitWith) {
+        clearTimeout(splitSaveTimersRef.current[itemId])
+        const version = (splitSaveVersionsRef.current[itemId] || 0) + 1
+        splitSaveVersionsRef.current[itemId] = version
+        pendingSplitSavesRef.current[itemId] = splitWith
+
+        splitSaveTimersRef.current[itemId] = setTimeout(async () => {
+            try {
+                await api.updateSplits(itemId, splitWith)
+                if (splitSaveVersionsRef.current[itemId] === version) {
+                    delete pendingSplitSavesRef.current[itemId]
+                }
+            } catch (error) {
+                console.error(error)
+                if (splitSaveVersionsRef.current[itemId] === version) {
+                    setItems(prev => prev.map(i => i.id === itemId ? { ...i, splitWith: fallbackSplitWith } : i))
+                    delete pendingSplitSavesRef.current[itemId]
+                }
+            }
+        }, 300)
     }
 
-    async function setItemSplit(itemId, splitWith) {
-        await api.updateSplits(itemId, splitWith)
-        setItems(prev => prev.map(i => i.id === itemId ? { ...i, splitWith } : i))
+    async function flushPendingSplitSaves() {
+        const pending = Object.entries(pendingSplitSavesRef.current)
+        if (pending.length === 0) return
+
+        pending.forEach(([itemId]) => clearTimeout(splitSaveTimersRef.current[itemId]))
+        await Promise.all(pending.map(([itemId, splitWith]) => api.updateSplits(itemId, splitWith)))
+        pending.forEach(([itemId]) => {
+            delete pendingSplitSavesRef.current[itemId]
+        })
     }
 
-    async function copySplitFromPrevious(index) {
+    function toggleSplit(itemId, name) {
+        setItems(prev => prev.map(item => {
+            if (item.id !== itemId) return item
+
+            const current = item.splitWith || []
+            const updated = current.includes(name)
+                ? current.filter(n => n !== name)
+                : [...current, name]
+
+            saveItemSplitSoon(itemId, updated, current)
+            return { ...item, splitWith: updated }
+        }))
+    }
+
+    function setItemSplit(itemId, splitWith) {
+        setItems(prev => prev.map(item => {
+            if (item.id !== itemId) return item
+
+            const current = item.splitWith || []
+            saveItemSplitSoon(itemId, splitWith, current)
+            return { ...item, splitWith }
+        }))
+    }
+
+    function copySplitFromPrevious(index) {
         if (index === 0) return
         const previous = items[index - 1]
         const current = items[index]
-        await setItemSplit(current.id, previous.splitWith || [])
+        setItemSplit(current.id, previous.splitWith || [])
     }
 
     function startEditItem(item) {
@@ -650,9 +726,12 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     async function finishRound() {
         setSavingAction("finish")
         try {
+            await flushPendingSplitSaves()
             await api.closeRound(round.id)
             api.clearCache(["/rounds"])
             setStep("summary")
+        } catch (err) {
+            alert(err.message || "บันทึกข้อมูลหารบิลไม่สำเร็จ ลองอีกครั้งนะครับ")
         } finally {
             setSavingAction("")
         }
@@ -982,21 +1061,89 @@ function buildSummaryText() {
             )}
 
             {!friendsLoading && groups.length > 0 && (
-                <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-2">
-                    <p className="text-xs text-gray-500">ดึงจากกลุ่ม</p>
-                    <div className="flex flex-wrap gap-2">
-                        {groups.map(g => (
-                            <button key={g.id} onClick={() => loadGroup(g)}
-                                className="px-3 py-1.5 bg-[#13131f] border border-gray-700 hover:border-purple-500 rounded-xl text-xs">
-                                {g.name} ({g.members.length})
-                            </button>
-                        ))}
+                <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-4">
+                    <div className="flex items-end justify-between gap-3">
+                        <div>
+                            <p className="text-sm font-semibold text-white">เลือกจากกลุ่ม</p>
+                            <p className="mt-1 text-xs text-gray-500">กดเลือกทั้งกลุ่ม หรือเพิ่มชื่อเข้า group แล้วเลือกเข้ารอบนี้ได้ทันที</p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-200">
+                            {groups.length} กลุ่ม
+                        </span>
+                    </div>
+
+                    <div className="space-y-3">
+                        {groups.map(group => {
+                            const picked = group.members.filter(name => selected.includes(name)).length
+                            return (
+                                <div key={group.id} className="rounded-2xl border border-white/10 bg-[#13131f] p-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm font-semibold text-white">{group.name}</p>
+                                            <p className="mt-1 text-xs text-gray-500">
+                                                สมาชิก {group.members.length} คน {picked > 0 ? `• เลือกแล้ว ${picked} คน` : ""}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => loadGroup(group)}
+                                            className="shrink-0 rounded-xl bg-purple-600 px-3 py-2 text-xs font-semibold text-white hover:bg-purple-500"
+                                        >
+                                            เลือกทั้งกลุ่ม
+                                        </button>
+                                    </div>
+
+                                    <div className="mt-3 flex flex-wrap gap-1.5">
+                                        {group.members.length === 0 ? (
+                                            <span className="text-xs text-gray-600">ยังไม่มีสมาชิก</span>
+                                        ) : group.members.map(name => {
+                                            const on = selected.includes(name)
+                                            return (
+                                                <button
+                                                    key={name}
+                                                    onClick={() => togglePerson(name)}
+                                                    className={`rounded-full px-2.5 py-1 text-xs font-medium transition-all ${
+                                                        on ? "bg-purple-600 text-white" : "bg-[#1c1c2e] text-gray-400 border border-gray-700"
+                                                    }`}
+                                                >
+                                                    {on ? "✓ " : ""}{name}
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+
+                                    <div className="mt-3 flex gap-2">
+                                        <input
+                                            list={`setup-group-members-${group.id}`}
+                                            className="min-w-0 flex-1 rounded-xl border border-gray-700 bg-[#1c1c2e] px-3 py-2 text-sm outline-none focus:border-purple-500"
+                                            placeholder="เพิ่มชื่อเข้า group นี้..."
+                                            value={newGroupMemberInputs[group.id] || ""}
+                                            onChange={e => setNewGroupMemberInputs(prev => ({ ...prev, [group.id]: e.target.value }))}
+                                            onKeyDown={e => e.key === "Enter" && addGroupMemberFromSetup(group)}
+                                        />
+                                        <datalist id={`setup-group-members-${group.id}`}>
+                                            {friends.filter(f => !group.members.includes(f.name)).map(f => (
+                                                <option key={f.id} value={f.name} />
+                                            ))}
+                                        </datalist>
+                                        <button
+                                            onClick={() => addGroupMemberFromSetup(group)}
+                                            className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
+                                        >
+                                            เพิ่ม
+                                        </button>
+                                    </div>
+                                </div>
+                            )
+                        })}
                     </div>
                 </div>
             )}
 
             <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-2">
-                <p className="text-xs text-gray-500">เลือกคนร่วมรอบ</p>
+                <div>
+                    <p className="text-sm font-semibold text-white">เลือกทีละคน</p>
+                    <p className="mt-1 text-xs text-gray-500">พิมพ์ชื่อใหม่เพื่อเพิ่มเข้ารายชื่อเพื่อนและเลือกเข้ารอบนี้</p>
+                </div>
                 <div className="flex gap-2 rounded-xl bg-[#13131f] p-2">
                     <input
                         className="min-w-0 flex-1 bg-[#1c1c2e] border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500"
@@ -1033,7 +1180,7 @@ function buildSummaryText() {
                 }
                 {selected.length > 0 && (
                     <div className="rounded-xl border border-purple-500/20 bg-purple-500/10 px-3 py-2">
-                        <p className="text-xs font-medium text-purple-200">เลือกแล้ว {selected.length} คน</p>
+                        <p className="text-xs font-medium text-purple-200">คนร่วมรอบนี้ {selected.length} คน</p>
                         <p className="mt-1 text-xs text-gray-400">{selected.join(", ")}</p>
                     </div>
                 )}
