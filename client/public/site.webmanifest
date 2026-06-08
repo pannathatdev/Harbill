@@ -1,0 +1,19 @@
+{
+  "name": "Harbill - หารบิล",
+  "short_name": "Harbill",
+  "description": "แอปหารบิลภาษาไทย สรุปยอด แยกค่าอาหาร และสร้าง QR พร้อมเพย์",
+  "lang": "th-TH",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "64x64",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

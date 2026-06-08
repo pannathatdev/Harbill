@@ -26,6 +26,17 @@ const steps = [
   "สรุปยอดและส่ง QR ให้โอน",
 ]
 
+const searchTopics = [
+  "แอปหารบิล",
+  "โปรแกรมหารบิล",
+  "แยกบิลค่าอาหาร",
+  "หารค่าอาหารกับเพื่อน",
+  "หารเงินกับเพื่อน",
+  "สรุปยอดโอน",
+  "QR พร้อมเพย์",
+  "หารค่าใช้จ่ายทริป",
+]
+
 export default function LandingPage() {
   const hasToken = Boolean(localStorage.getItem("token"))
 
@@ -148,6 +159,21 @@ export default function LandingPage() {
               <p className="mt-3 text-sm leading-6 text-slate-400">{item.desc}</p>
             </article>
           ))}
+        </div>
+        <div className="mt-8 rounded-2xl border border-white/10 bg-[#0f172a] p-5">
+          <h2 className="text-xl font-black text-white">แอปหารบิลสำหรับแยกค่าอาหารและค่าใช้จ่ายกับเพื่อน</h2>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-400">
+            Harbill เป็นโปรแกรมหารบิลภาษาไทยที่ช่วยแยกบิลค่าอาหาร หารค่าใช้จ่ายทริป หารเงินกับเพื่อน
+            และสรุปยอดโอนรายคน เหมาะกับมื้ออาหาร ร้านอาหาร คาเฟ่ ทริปสั้น ๆ หรือกิจกรรมที่หลายคนจ่ายรวมกัน
+            แล้วต้องการยอดที่ชัดเจนพร้อม QR พร้อมเพย์
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {searchTopics.map(topic => (
+              <span key={topic} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-300">
+                {topic}
+              </span>
+            ))}
+          </div>
         </div>
       </section>
 
