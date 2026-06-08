@@ -103,6 +103,17 @@ CREATE TABLE IF NOT EXISTS dues (
   CONSTRAINT fk_dues_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS due_payment_links (
+  token VARCHAR(64) PRIMARY KEY,
+  user_id INT NOT NULL,
+  person_name VARCHAR(255) NOT NULL,
+  due_month CHAR(7) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NULL,
+  INDEX idx_due_payment_links_user_month (user_id, due_month),
+  CONSTRAINT fk_due_payment_links_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS ai_scan_usage (
   user_id INT NOT NULL,
   usage_date DATE NOT NULL,

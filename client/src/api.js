@@ -174,6 +174,8 @@ export const api = {
   },
   addDue: (data) => post("/dues", data),
   updateDue: (id, data) => patch(`/dues/${id}`, data),
+  createDuePayLink: (data) => post("/dues/pay-link", data),
+  getPublicPayment: (token) => req(`/pay/${token}`, { skipCache: true }),
   attachDueSlip: (id, file) => {
     const form = new FormData()
     form.append("slip", file)

@@ -93,6 +93,61 @@ function statusClass(status, darkMode) {
   return darkMode ? "bg-rose-400/10 text-rose-200" : "bg-rose-50 text-rose-700"
 }
 
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  )
+}
+
+function LinkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+function UndoIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10a6 6 0 0 1 0 12h-4" />
+    </svg>
+  )
+}
+
+function UploadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 16V4" />
+      <path d="m7 9 5-5 5 5" />
+      <path d="M20 16v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4" />
+    </svg>
+  )
+}
+
+function ImageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="m21 15-3.5-3.5L9 20" />
+    </svg>
+  )
+}
+
 function readStoredItems() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -246,13 +301,22 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
   function openPaymentLink(person) {
     const personItems = items.filter(item => item.month === month && item.person === person && item.status !== "paid")
     const total = personItems.reduce((sum, item) => sum + item.amount, 0)
-    const token = btoa(encodeURIComponent(`${person}:${month}`)).replace(/=+$/g, "")
-    setLinkModal({
+    const fallbackToken = btoa(encodeURIComponent(`${person}:${month}`)).replace(/=+$/g, "")
+    const fallback = {
       person,
       total,
-      url: `${window.location.origin}/pay/${token}?name=${encodeURIComponent(person)}`,
+      url: `${window.location.origin}/pay/${fallbackToken}?name=${encodeURIComponent(person)}`,
       text: buildDuesText(person),
-    })
+    }
+
+    if (!usingDatabase) {
+      setLinkModal(fallback)
+      return
+    }
+
+    api.createDuePayLink({ person, month })
+      .then(result => setLinkModal({ ...fallback, url: result.url }))
+      .catch(() => setLinkModal(fallback))
   }
 
   function attachSlip(id, file) {
@@ -287,10 +351,11 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
   const outlineButton = darkMode
     ? "border-slate-700 text-slate-300 hover:border-sky-500 hover:text-sky-200"
     : "border-slate-200 text-slate-600 hover:border-sky-300 hover:text-sky-700"
+  const iconButton = `inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${outlineButton}`
 
   return (
     <main className={`-mx-4 -my-5 min-h-screen px-4 py-5 ${page}`}>
-      <div className="mx-auto max-w-5xl space-y-5">
+      <div className="mx-auto max-w-4xl space-y-5">
         <section className={`rounded-2xl border p-4 shadow-sm ${panel}`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -349,8 +414,13 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-black">{t.byPerson}</h2>
-            <button onClick={copyAllDues} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${outlineButton}`}>
-              {t.copyText}
+            <button
+              onClick={copyAllDues}
+              title={t.copyText}
+              aria-label={t.copyText}
+              className={iconButton}
+            >
+              <CopyIcon />
             </button>
           </div>
 
@@ -377,8 +447,13 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
                     <p className="text-base font-black">{person}</p>
                     <p className={`mt-1 text-xs ${muted}`}>{t.outstanding} ฿{formatMoney(outstanding)}</p>
                   </div>
-                  <button onClick={() => openPaymentLink(person)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-700">
-                    {t.sendLink}
+                  <button
+                    onClick={() => openPaymentLink(person)}
+                    title={t.sendLink}
+                    aria-label={t.sendLink}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-700"
+                  >
+                    <LinkIcon />
                   </button>
                 </div>
                 <div className={`divide-y ${darkMode ? "divide-slate-800" : "divide-slate-100"}`}>
@@ -397,17 +472,28 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
                       <div className="flex flex-wrap gap-2 lg:justify-end">
                         <button
                           onClick={() => setItemStatus(item.id, item.status === "paid" ? "unpaid" : "paid")}
-                          className={`rounded-xl border px-3 py-2 text-xs font-semibold ${outlineButton}`}
+                          title={item.status === "paid" ? t.markUnpaid : t.markPaid}
+                          aria-label={item.status === "paid" ? t.markUnpaid : t.markPaid}
+                          className={iconButton}
                         >
-                          {item.status === "paid" ? t.markUnpaid : t.markPaid}
+                          {item.status === "paid" ? <UndoIcon /> : <CheckIcon />}
                         </button>
                         {item.slipUrl && (
-                          <button onClick={() => setSlipModal(item)} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${outlineButton}`}>
-                            {t.viewSlip}
+                          <button
+                            onClick={() => setSlipModal(item)}
+                            title={t.viewSlip}
+                            aria-label={t.viewSlip}
+                            className={iconButton}
+                          >
+                            <ImageIcon />
                           </button>
                         )}
-                        <label className={`cursor-pointer rounded-xl border px-3 py-2 text-xs font-semibold ${outlineButton}`}>
-                          {t.uploadSlip}
+                        <label
+                          title={t.uploadSlip}
+                          aria-label={t.uploadSlip}
+                          className={`cursor-pointer ${iconButton}`}
+                        >
+                          <UploadIcon />
                           <input type="file" accept="image/*,.pdf" className="hidden" onChange={e => attachSlip(item.id, e.target.files?.[0])} />
                         </label>
                       </div>

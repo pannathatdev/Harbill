@@ -170,6 +170,19 @@ async function ensureDuesSchema() {
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `)
 
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS due_payment_links (
+      token VARCHAR(64) PRIMARY KEY,
+      user_id INT NOT NULL,
+      person_name VARCHAR(255) NOT NULL,
+      due_month CHAR(7) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      expires_at DATETIME NULL,
+      INDEX idx_due_payment_links_user_month (user_id, due_month),
+      CONSTRAINT fk_due_payment_links_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+
   duesSchemaReady = true
 }
 
@@ -1260,10 +1273,68 @@ app.post("/dues/:id/slip", requireAuth, upload.single("slip"), async (req, res) 
   res.json(mapDue(rows[0]))
 })
 
+app.post("/dues/pay-link", requireAuth, async (req, res) => {
+  await ensureDuesSchema()
+  const person = String(req.body.person || "").trim()
+  const month = String(req.body.month || "").trim().slice(0, 7)
+  if (!person || !/^\d{4}-\d{2}$/.test(month)) {
+    return res.status(400).json({ error: "Invalid payment link request" })
+  }
+
+  const [existing] = await db.query(
+    "SELECT token FROM due_payment_links WHERE user_id=? AND person_name=? AND due_month=? ORDER BY created_at DESC LIMIT 1",
+    [req.user.id, person, month]
+  )
+  const token = existing[0]?.token || crypto.randomBytes(18).toString("hex")
+
+  if (!existing[0]) {
+    await db.query(
+      "INSERT INTO due_payment_links (token, user_id, person_name, due_month) VALUES (?, ?, ?, ?)",
+      [token, req.user.id, person, month]
+    )
+  }
+
+  res.json({ token, url: `${CLIENT_URL}/pay/${token}?name=${encodeURIComponent(person)}` })
+})
+
 app.delete("/dues/:id", requireAuth, async (req, res) => {
   await ensureDuesSchema()
   await db.query("DELETE FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
   res.json({ ok: true })
+})
+
+app.get("/pay/:token", async (req, res) => {
+  await ensureDuesSchema()
+  const token = String(req.params.token || "")
+  const [links] = await db.query("SELECT * FROM due_payment_links WHERE token=?", [token])
+  const link = links[0]
+  if (!link) return res.status(404).json({ error: "Payment link not found" })
+  if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) {
+    return res.status(410).json({ error: "Payment link expired" })
+  }
+
+  const [items] = await db.query(`
+    SELECT id, person_name, title, amount, due_month, status, note
+    FROM dues
+    WHERE user_id=? AND person_name=? AND due_month=? AND status <> 'paid'
+    ORDER BY created_at DESC
+  `, [link.user_id, link.person_name, link.due_month])
+
+  const [ownerRows] = await db.query(`
+    SELECT friend_name, promptpay, display_name
+    FROM payment_info
+    WHERE user_id=? AND promptpay IS NOT NULL AND promptpay <> ''
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `, [link.user_id])
+
+  res.json({
+    person: link.person_name,
+    month: link.due_month,
+    items: items.map(mapDue),
+    total: items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+    payment: ownerRows[0] || null
+  })
 })
 
 // ── SCAN ──────────────────────────────────────────────────────

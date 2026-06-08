@@ -7,18 +7,105 @@ import FriendsPage from "./components/FriendsPage"
 import RoundPage from "./components/RoundPage"
 import HistoryPage from "./components/HistoryPage"
 import DuesPage from "./components/DuesPage"
+import PublicPayPage from "./components/PublicPayPage"
 import ProPage from "./components/ProPage"
 import AdminPage from "./components/AdminPage"
 import { api } from "./api"
 import { AdSlot, SupportLink } from "./components/Monetization"
 
 const TABS = [
-  { id: "/app", labelTh: "รอบบิล", descTh: "หารบิล", labelEn: "Bills", descEn: "Split" },
-  { id: "/dues", labelTh: "ยอดค้าง", descTh: "ติดตาม", labelEn: "Dues", descEn: "Track" },
-  { id: "/friends", labelTh: "รายชื่อ", descTh: "เพื่อน", labelEn: "Contacts", descEn: "People" },
-  { id: "/history", labelTh: "ประวัติ", descTh: "รอบเดิม", labelEn: "History", descEn: "Rounds" },
-  { id: "/pro", labelTh: "สมาชิก", descTh: "Pro", labelEn: "Plan", descEn: "Pro" },
+  { id: "/app", icon: BillIcon, labelTh: "รอบบิล", descTh: "หารบิล", labelEn: "Bills", descEn: "Split" },
+  { id: "/dues", icon: DuesIcon, labelTh: "ยอดค้าง", descTh: "ติดตาม", labelEn: "Dues", descEn: "Track" },
+  { id: "/friends", icon: ContactsIcon, labelTh: "รายชื่อ", descTh: "เพื่อน", labelEn: "Contacts", descEn: "People" },
+  { id: "/history", icon: HistoryIcon, labelTh: "ประวัติ", descTh: "รอบเดิม", labelEn: "History", descEn: "Rounds" },
+  { id: "/pro", icon: PlanIcon, labelTh: "สมาชิก", descTh: "Pro", labelEn: "Plan", descEn: "Pro" },
 ]
+
+function BillIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 2v20" />
+      <path d="M16 2v20" />
+      <path d="M4 7h16" />
+      <path d="M4 17h16" />
+    </svg>
+  )
+}
+
+function DuesIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 5h16" />
+      <path d="M4 12h10" />
+      <path d="M4 19h7" />
+      <path d="M17 15l2 2 4-4" />
+    </svg>
+  )
+}
+
+function ContactsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  )
+}
+
+function HistoryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <path d="M3 4v6h6" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  )
+}
+
+function PlanIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2l3 7h7l-5.5 4.5 2 7L12 16l-6.5 4.5 2-7L2 9h7l3-7z" />
+    </svg>
+  )
+}
+
+function GlobeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20" />
+      <path d="M12 2a15 15 0 0 1 0 20" />
+      <path d="M12 2a15 15 0 0 0 0 20" />
+    </svg>
+  )
+}
+
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2" />
+      <path d="M12 20v2" />
+      <path d="M4.93 4.93l1.41 1.41" />
+      <path d="M17.66 17.66l1.41 1.41" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
+      <path d="M4.93 19.07l1.41-1.41" />
+      <path d="M17.66 6.34l1.41-1.41" />
+    </svg>
+  )
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  )
+}
 
 function analyticsId(key, storage = localStorage) {
   const storageKey = `harbill:${key}`
@@ -44,7 +131,7 @@ function Layout({ children, user, onLogout, lang, onLangChange, darkMode, onThem
   const navigate = useNavigate()
   const path = window.location.pathname
   const isPro = user?.isPro || user?.plan === "pro"
-  const isWide = path === "/dues"
+  const contentWidth = "max-w-4xl"
   const shell = darkMode ? "bg-[#0f172a] text-white" : "bg-[#f5f7fb] text-slate-950"
   const topbar = darkMode ? "border-white/10 bg-slate-950/90" : "border-slate-200 bg-white/95"
   const brandText = darkMode ? "text-white" : "text-slate-950"
@@ -57,7 +144,7 @@ function Layout({ children, user, onLogout, lang, onLangChange, darkMode, onThem
   return (
     <div className={`min-h-screen ${shell}`}>
       <div className={`sticky top-0 z-10 border-b backdrop-blur-sm ${topbar}`}>
-        <div className={`${isWide ? "max-w-5xl" : "max-w-lg"} mx-auto px-4 py-3 flex justify-between items-center`}>
+        <div className={`${contentWidth} mx-auto px-4 py-3 flex justify-between items-center`}>
           <div className="flex items-center gap-2">
             <span className="text-xl">🍽️</span>
             <span className={`font-bold ${brandText}`}>Harbill</span>
@@ -67,15 +154,22 @@ function Layout({ children, user, onLogout, lang, onLangChange, darkMode, onThem
             <span className={`hidden text-sm sm:inline ${mutedText}`}>{user?.name}</span>
             <button
               onClick={onThemeChange}
-              className={`rounded-xl border px-2.5 py-1.5 text-xs font-bold ${darkMode ? "border-white/10 bg-white/5 text-white/70" : "border-slate-200 bg-slate-50 text-slate-600"}`}
+              title={darkMode ? "เปลี่ยนเป็นโหมดสว่าง" : "เปลี่ยนเป็นโหมดมืด"}
+              aria-label={darkMode ? "เปลี่ยนเป็นโหมดสว่าง" : "เปลี่ยนเป็นโหมดมืด"}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border ${darkMode ? "border-white/10 bg-white/5 text-white/70" : "border-slate-200 bg-slate-50 text-slate-600"}`}
             >
-              {darkMode ? "Dark" : "Light"}
+              {darkMode ? <MoonIcon /> : <SunIcon />}
             </button>
             <button
               onClick={onLangChange}
-              className={`rounded-xl border px-2.5 py-1.5 text-xs font-bold ${darkMode ? "border-white/10 bg-white/5 text-white/70" : "border-slate-200 bg-slate-50 text-slate-600"}`}
+              title={lang === "th" ? "Switch to English" : "เปลี่ยนเป็นภาษาไทย"}
+              aria-label={lang === "th" ? "Switch to English" : "เปลี่ยนเป็นภาษาไทย"}
+              className={`relative inline-flex h-8 w-8 items-center justify-center rounded-xl border ${darkMode ? "border-white/10 bg-white/5 text-white/70" : "border-slate-200 bg-slate-50 text-slate-600"}`}
             >
-              {lang === "th" ? "TH" : "EN"}
+              <GlobeIcon />
+              <span className={`absolute -bottom-1 -right-1 rounded px-1 text-[9px] font-black ${darkMode ? "bg-slate-800 text-sky-200" : "bg-white text-sky-700"}`}>
+                {lang === "th" ? "TH" : "EN"}
+              </span>
             </button>
             <button
               onClick={onLogout}
@@ -89,7 +183,7 @@ function Layout({ children, user, onLogout, lang, onLangChange, darkMode, onThem
         </div>
       </div>
 
-      <div className={`${isWide ? "max-w-5xl" : "max-w-lg"} mx-auto px-4 pt-5 pb-28`}>
+      <div className={`${contentWidth} mx-auto px-4 pt-5 pb-28`}>
         {children}
         {!isPro && path !== "/dues" && (
           <div className="mt-6 space-y-3">
@@ -100,21 +194,24 @@ function Layout({ children, user, onLogout, lang, onLangChange, darkMode, onThem
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-10">
-        <div className={`${isWide ? "max-w-5xl" : "max-w-lg"} mx-auto`}>
+        <div className={`${contentWidth} mx-auto`}>
           <div className={`rounded-t-3xl border-t backdrop-blur-sm ${nav}`}>
             <div className="flex">
               {TABS.map(t => {
                 const active = path === t.id
                 const label = lang === "th" ? t.labelTh : t.labelEn
                 const desc = lang === "th" ? t.descTh : t.descEn
+                const Icon = t.icon
                 return (
                   <button key={t.id} onClick={() => navigate(t.id)}
+                    title={label}
+                    aria-label={label}
                     className={`flex-1 flex flex-col items-center py-3 gap-0.5 transition-all ${
                       active
                         ? darkMode ? "text-white" : "text-slate-950"
                         : darkMode ? "text-white/35 hover:text-white/65" : "text-slate-400 hover:text-slate-700"
                     }`}>
-                    <span className="text-sm font-black">{label}</span>
+                    <Icon />
                     <span className={`text-[11px] font-medium ${active ? "text-sky-300" : ""}`}>{desc}</span>
                     {active && <div className="w-1 h-1 rounded-full bg-sky-400 mt-0.5"></div>}
                   </button>
@@ -273,6 +370,7 @@ export default function App() {
           : <LoginPage />
       } />
       <Route path="/auth" element={<AuthCallback />} />
+      <Route path="/pay/:token" element={<PublicPayPage />} />
       <Route path="/app" element={
         <RequireAuth user={user} onLogout={handleLogout} lang={lang} onLangChange={toggleLanguage} darkMode={darkMode} onThemeChange={toggleTheme}>
           <RoundPage
