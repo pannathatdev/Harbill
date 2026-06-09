@@ -173,6 +173,7 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
   const [slipModal, setSlipModal] = useState(null)
   const [loading, setLoading] = useState(true)
   const [usingDatabase, setUsingDatabase] = useState(false)
+  const [expandedPeople, setExpandedPeople] = useState({})
   const t = copy[lang] || copy.th
 
   useEffect(() => {
@@ -224,9 +225,33 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
     }, {})
   }, [filtered])
 
+  const personSummaries = useMemo(() => {
+    return Object.entries(grouped).map(([person, personItems]) => {
+      const total = personItems.reduce((sum, item) => sum + item.amount, 0)
+      const paid = personItems.filter(item => item.status === "paid").reduce((sum, item) => sum + item.amount, 0)
+      const pending = personItems.filter(item => item.status === "pending").reduce((sum, item) => sum + item.amount, 0)
+      const outstanding = personItems.filter(item => item.status !== "paid").reduce((sum, item) => sum + item.amount, 0)
+      return {
+        person,
+        items: personItems,
+        total,
+        paid,
+        pending,
+        outstanding,
+        unpaidCount: personItems.filter(item => item.status === "unpaid").length,
+        pendingCount: personItems.filter(item => item.status === "pending").length,
+        paidCount: personItems.filter(item => item.status === "paid").length,
+      }
+    }).sort((a, b) => b.outstanding - a.outstanding || a.person.localeCompare(b.person))
+  }, [grouped])
+
   function showNotice(message) {
     setNotice(message)
     window.setTimeout(() => setNotice(""), 1800)
+  }
+
+  function togglePersonExpanded(person) {
+    setExpandedPeople(prev => ({ ...prev, [person]: !prev[person] }))
   }
 
   async function copyToClipboard(text, message = t.copied) {
@@ -480,37 +505,83 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
             </div>
           )}
 
-          {!loading && Object.entries(grouped).map(([person, personItems]) => {
-            const outstanding = personItems.filter(item => item.status !== "paid").reduce((sum, item) => sum + item.amount, 0)
+          {!loading && personSummaries.map(summary => {
+            const { person, items: personItems, outstanding, total, paid, pending, unpaidCount, pendingCount, paidCount } = summary
+            const expanded = expandedPeople[person] ?? personSummaries.length <= 3
+            const visibleItems = expanded ? personItems : personItems.slice(0, 2)
+            const paidRatio = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
             return (
               <article key={person} className={`overflow-hidden rounded-2xl border shadow-sm ${panel}`}>
-                <div className={`flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${darkMode ? "border-slate-700" : "border-slate-100"}`}>
-                  <div>
-                    <p className="text-base font-black">{person}</p>
-                    <p className={`mt-1 text-xs ${muted}`}>{t.outstanding} ฿{formatMoney(outstanding)}</p>
+                <div className={`border-b p-4 ${darkMode ? "border-slate-700" : "border-slate-100"}`}>
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <button
+                      type="button"
+                      onClick={() => togglePersonExpanded(person)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-lg font-black">{person}</p>
+                          <p className={`mt-1 text-xs ${muted}`}>{personItems.length} รายการ • จ่ายแล้ว {paidRatio}%</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${outstanding > 0 ? statusClass("unpaid", darkMode) : statusClass("paid", darkMode)}`}>
+                          {outstanding > 0 ? t.unpaid : t.paid}
+                        </span>
+                      </div>
+                      <div className={`mt-3 h-2 overflow-hidden rounded-full ${darkMode ? "bg-slate-800" : "bg-slate-100"}`}>
+                        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${paidRatio}%` }} />
+                      </div>
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-2 text-right md:w-72">
+                      <div className={`rounded-xl border px-3 py-2 ${softPanel}`}>
+                        <p className={`text-[11px] font-bold ${muted}`}>{t.outstanding}</p>
+                        <p className="mt-1 text-base font-black text-rose-300">฿{formatMoney(outstanding)}</p>
+                      </div>
+                      <div className={`rounded-xl border px-3 py-2 ${softPanel}`}>
+                        <p className={`text-[11px] font-bold ${muted}`}>รอตรวจ</p>
+                        <p className="mt-1 text-base font-black text-amber-300">฿{formatMoney(pending)}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => copyToClipboard(buildDuesText(person))}
-                      title={t.copyPersonText}
-                      aria-label={t.copyPersonText}
-                      className={iconButton}
-                    >
-                      <CopyIcon />
-                    </button>
-                    <button
-                      onClick={() => openPaymentLink(person)}
-                      title={t.sendLink}
-                      aria-label={t.sendLink}
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-700"
-                    >
-                      <LinkIcon />
-                    </button>
+
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass("unpaid", darkMode)}`}>{t.unpaid} {unpaidCount}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass("pending", darkMode)}`}>{t.pending} {pendingCount}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass("paid", darkMode)}`}>{t.paid} {paidCount}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => togglePersonExpanded(person)}
+                        className={`rounded-xl border px-3 py-2 text-xs font-bold ${outlineButton}`}
+                      >
+                        {expanded ? "ซ่อนรายการ" : `ดูรายการ (${personItems.length})`}
+                      </button>
+                      <button
+                        onClick={() => copyToClipboard(buildDuesText(person))}
+                        title={t.copyPersonText}
+                        aria-label={t.copyPersonText}
+                        className={iconButton}
+                      >
+                        <CopyIcon />
+                      </button>
+                      <button
+                        onClick={() => openPaymentLink(person)}
+                        title={t.sendLink}
+                        aria-label={t.sendLink}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-700"
+                      >
+                        <LinkIcon />
+                      </button>
+                    </div>
                   </div>
                 </div>
+
                 <div className={`divide-y ${darkMode ? "divide-slate-800" : "divide-slate-100"}`}>
-                  {personItems.map(item => (
-                    <div key={item.id} className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_auto_auto] lg:items-center">
+                  {visibleItems.map(item => (
+                    <div key={item.id} className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
                       <div>
                         <p className="text-sm font-semibold">{item.title}</p>
                         {(item.note || item.slipName) && <p className={`mt-1 text-xs ${muted}`}>{item.slipName || item.note}</p>}
@@ -551,6 +622,15 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
                       </div>
                     </div>
                   ))}
+                  {!expanded && personItems.length > visibleItems.length && (
+                    <button
+                      type="button"
+                      onClick={() => togglePersonExpanded(person)}
+                      className={`w-full px-4 py-3 text-center text-xs font-bold ${darkMode ? "text-sky-300 hover:bg-slate-800/60" : "text-sky-700 hover:bg-slate-50"}`}
+                    >
+                      ดูเพิ่มอีก {personItems.length - visibleItems.length} รายการ
+                    </button>
+                  )}
                 </div>
               </article>
             )
