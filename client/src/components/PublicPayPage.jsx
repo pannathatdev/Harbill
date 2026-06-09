@@ -60,6 +60,7 @@ export default function PublicPayPage({ darkMode = true }) {
   const [slipFile, setSlipFile] = useState(null)
   const [slipPreview, setSlipPreview] = useState("")
   const [uploadingSlip, setUploadingSlip] = useState(false)
+  const [uploadingItemId, setUploadingItemId] = useState(null)
   const [uploadMessage, setUploadMessage] = useState("")
 
   useEffect(() => {
@@ -165,6 +166,21 @@ export default function PublicPayPage({ darkMode = true }) {
     }
   }
 
+  async function uploadItemSlip(item, file) {
+    if (!file) return
+    setUploadingItemId(item.id)
+    setUploadMessage("")
+    try {
+      const result = await api.uploadPublicDueItemSlip(token, item.id, file)
+      setData(result)
+      setUploadMessage(`ส่งสลิปของ "${item.title}" แล้ว รอเจ้าของยอดตรวจ`)
+    } catch (err) {
+      setUploadMessage(err.message || "ส่งสลิปไม่สำเร็จ")
+    } finally {
+      setUploadingItemId(null)
+    }
+  }
+
   const page = darkMode ? "bg-[#0f172a] text-slate-100" : "bg-[#f5f7fb] text-slate-950"
   const panel = darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"
   const muted = darkMode ? "text-slate-400" : "text-slate-500"
@@ -207,13 +223,28 @@ export default function PublicPayPage({ darkMode = true }) {
                 {data.items.length === 0 ? (
                   <p className="p-4 text-center text-sm text-emerald-700">ไม่มีรายการค้างชำระแล้ว</p>
                 ) : data.items.map(item => (
-                  <div key={item.id} className="grid gap-2 p-4 sm:grid-cols-[1fr_auto] sm:items-start">
+                  <div key={item.id} className="grid gap-3 p-4 sm:grid-cols-[1fr_auto] sm:items-start">
                     <div className="min-w-0">
                       <p className="text-sm font-bold">{item.title}</p>
                       {item.note && <p className={`mt-1 text-xs ${muted}`}>{item.note}</p>}
                       {item.slipName && <p className="mt-1 text-xs font-semibold text-amber-500">ส่งสลิปแล้ว รอตรวจ</p>}
                     </div>
-                    <p className="text-right text-sm font-black sm:text-left">฿{formatMoney(item.amount)}</p>
+                    <div className="flex flex-wrap items-center justify-between gap-2 sm:flex-col sm:items-end">
+                      <p className="text-sm font-black">฿{formatMoney(item.amount)}</p>
+                      <label className={`inline-flex cursor-pointer items-center justify-center rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${item.slipName ? "border-amber-300 bg-amber-50 text-amber-700" : button}`}>
+                        {uploadingItemId === item.id ? "กำลังส่ง..." : item.slipName ? "ส่งใหม่" : "ส่งสลิปนี้"}
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          className="hidden"
+                          disabled={uploadingItemId === item.id}
+                          onChange={event => {
+                            uploadItemSlip(item, event.target.files?.[0])
+                            event.target.value = ""
+                          }}
+                        />
+                      </label>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -269,7 +300,7 @@ export default function PublicPayPage({ darkMode = true }) {
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <p className="text-sm font-black">ส่งสลิปให้เจ้าของยอด</p>
-                      <p className={`mt-1 text-xs leading-5 ${muted}`}>หลังโอนแล้ว อัปโหลดสลิปที่นี่ ระบบจะเปลี่ยนรายการเป็น “รอตรวจ” ให้เจ้าของเข้ามากดรับเงินแล้ว</p>
+                      <p className={`mt-1 text-xs leading-5 ${muted}`}>ใช้ช่องนี้เมื่อโอนรวมทั้งยอด ถ้าโอนแยก ให้กด “ส่งสลิปนี้” ใต้รายการนั้นแทน</p>
                     </div>
                     <span className={`text-xs font-bold ${muted}`}>สูงสุด 5MB</span>
                   </div>

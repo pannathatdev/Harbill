@@ -1456,6 +1456,40 @@ app.post("/pay/:token/slip", upload.single("slip"), async (req, res) => {
   res.json({ ok: true, ...fresh.body })
 })
 
+app.post("/pay/:token/items/:id/slip", upload.single("slip"), async (req, res) => {
+  await ensureDuesSchema()
+  if (!req.file) return res.status(400).json({ error: "Slip file required" })
+  const token = String(req.params.token || "")
+  const result = await publicPaymentPayload(token)
+  if (result.status !== 200) return res.status(result.status).json({ error: result.error })
+  const { link } = result
+  const [dueRows] = await db.query(`
+    SELECT *
+    FROM dues
+    WHERE id=? AND user_id=? AND person_name=? AND due_month=? AND status <> 'paid'
+    LIMIT 1
+  `, [req.params.id, link.user_id, link.person_name, link.due_month])
+  const due = dueRows[0]
+  if (!due) return res.status(404).json({ error: "Due item not found for this payment link" })
+
+  const slipId = await createDueSlip({
+    userId: link.user_id,
+    token,
+    person: link.person_name,
+    month: link.due_month,
+    amount: due.amount,
+    file: req.file
+  })
+  await db.query(`
+    UPDATE dues
+    SET status='pending', due_slip_id=?, slip_name=?, slip_type=?, slip_uploaded_at=NOW()
+    WHERE id=? AND user_id=?
+  `, [slipId, req.file.originalname, req.file.mimetype, due.id, link.user_id])
+
+  const fresh = await publicPaymentPayload(token)
+  res.json({ ok: true, ...fresh.body })
+})
+
 // ── SCAN ──────────────────────────────────────────────────────
 app.post("/billing/scan-credits/webhook", async (req, res) => {
   const secret = process.env.PAYMENT_WEBHOOK_SECRET

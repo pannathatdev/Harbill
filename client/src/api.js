@@ -188,6 +188,18 @@ export const api = {
       return data
     })
   },
+  uploadPublicDueItemSlip: (token, id, file) => {
+    const form = new FormData()
+    form.append("slip", file)
+    return fetch(`${BASE}/pay/${token}/items/${id}/slip`, {
+      method: "POST",
+      body: form
+    }).then(async r => {
+      const data = await r.json()
+      if (!r.ok) throw new Error(data?.error || "Upload failed")
+      return data
+    })
+  },
   getDueSlipBlob: (id) => fetch(`${BASE}/dues/${id}/slip`, {
     headers: { "Authorization": `Bearer ${getToken()}` }
   }).then(async r => {
