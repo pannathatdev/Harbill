@@ -370,13 +370,15 @@ export default function App() {
           : <LoginPage />
       } />
       <Route path="/auth" element={<AuthCallback />} />
-      <Route path="/pay/:token" element={<PublicPayPage />} />
+      <Route path="/pay/:token" element={<PublicPayPage darkMode={darkMode} />} />
       <Route path="/app" element={
         <RequireAuth user={user} onLogout={handleLogout} lang={lang} onLangChange={toggleLanguage} darkMode={darkMode} onThemeChange={toggleTheme}>
           <RoundPage
             user={user}
             initialRound={editRound}
             onRoundConsumed={() => setEditRound(null)}
+            lang={lang}
+            darkMode={darkMode}
           />
         </RequireAuth>
       } />

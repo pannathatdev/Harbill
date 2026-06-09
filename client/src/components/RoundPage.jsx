@@ -99,14 +99,18 @@ function TrashIcon() {
     )
 }
 
-function IconButton({ onClick, title, children, className = "" }) {
+function IconButton({ onClick, title, children, className = "", darkMode = true }) {
     return (
         <button
             type="button"
             onClick={onClick}
             title={title}
             aria-label={title}
-            className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-[#1c1c2e] text-gray-400 transition-all hover:border-purple-500/60 hover:text-white ${className}`}
+            className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-all ${
+                darkMode
+                    ? "border-white/10 bg-[#1c1c2e] text-gray-400 hover:border-purple-500/60 hover:text-white"
+                    : "border-slate-200 bg-white text-slate-500 shadow-sm hover:border-sky-300 hover:text-slate-950"
+            } ${className}`}
         >
             {children}
         </button>
@@ -154,7 +158,7 @@ function buildPromptPayPayload(promptpay, amount) {
     return `${withoutCrc}${crc16Ccitt(withoutCrc)}`
 }
 
-export default function RoundPage({ user, initialRound, onRoundConsumed }) {
+export default function RoundPage({ user, initialRound, onRoundConsumed, darkMode = true, lang = "th" }) {
     const [step, setStep] = useState("setup")
     const [friends, setFriends] = useState([])
     const [groups, setGroups] = useState([])
@@ -196,6 +200,28 @@ export default function RoundPage({ user, initialRound, onRoundConsumed }) {
     const [newFriendInput, setNewFriendInput] = useState("")
     const [newGroupMemberInputs, setNewGroupMemberInputs] = useState({})
     const [showAddFriend, setShowAddFriend] = useState(false)
+
+    const textMain = darkMode ? "text-white" : "text-slate-950"
+    const textMuted = darkMode ? "text-gray-500" : "text-slate-500"
+    const textSubtle = darkMode ? "text-gray-600" : "text-slate-400"
+    const surface = darkMode ? "border-white/10 bg-[#1c1c2e]" : "border-slate-200 bg-white shadow-sm"
+    const surfaceSoft = darkMode ? "border-gray-800 bg-[#13131f]" : "border-slate-200 bg-slate-50"
+    const inputClass = darkMode
+        ? "border-gray-700 bg-[#13131f] text-white placeholder:text-gray-500 focus:border-purple-500"
+        : "border-slate-200 bg-white text-slate-950 placeholder:text-slate-400 focus:border-sky-500"
+    const inputSoftClass = darkMode
+        ? "border-gray-700 bg-[#1c1c2e] text-white placeholder:text-gray-500 focus:border-purple-500"
+        : "border-slate-200 bg-white text-slate-950 placeholder:text-slate-400 focus:border-sky-500"
+    const actionPanel = darkMode ? "bg-[#13131f]" : "bg-slate-100"
+    const inactiveChip = darkMode
+        ? "border border-gray-700 bg-[#13131f] text-gray-400 hover:text-gray-200"
+        : "border border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-slate-950"
+    const inactiveChipSoft = darkMode
+        ? "border border-gray-700 bg-[#1c1c2e] text-gray-500 hover:text-gray-300"
+        : "border border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-slate-950"
+    const secondaryButton = darkMode
+        ? "border-white/10 bg-[#13131f] text-gray-300 hover:border-emerald-500/60 hover:text-white"
+        : "border-slate-200 bg-white text-slate-600 shadow-sm hover:border-emerald-300 hover:text-slate-950"
 
     useEffect(() => { loadFriends() }, [])
 
@@ -1067,13 +1093,13 @@ function buildSummaryText() {
 
     // ─── SETUP ───────────────────────────────────────────────
     if (step === "setup") return (
-        <div className="space-y-4">
+        <div className={`space-y-4 ${textMain}`}>
             <h1 className="text-lg font-semibold">เปิดรอบใหม่</h1>
 
-            <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-3">
-                <p className="text-xs text-gray-500">ชื่อรอบ (ไม่บังคับ)</p>
+            <div className={`rounded-2xl border p-4 space-y-3 ${surface}`}>
+                <p className={`text-xs ${textMuted}`}>ชื่อรอบ (ไม่บังคับ)</p>
                 <input
-                    className="w-full bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
+                    className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${inputClass}`}
                     placeholder="เช่น ข้าวเที่ยง, ทริปเขาใหญ่..."
                     value={roundName}
                     onChange={e => setRoundName(e.target.value)}
@@ -1082,19 +1108,19 @@ function buildSummaryText() {
             </div>
 
             {friendsLoading && (
-                <div className="rounded-2xl bg-[#1c1c2e] p-5 text-center text-sm text-gray-500">
+                <div className={`rounded-2xl border p-5 text-center text-sm ${surface} ${textMuted}`}>
                     กำลังโหลดเพื่อนและกลุ่ม...
                 </div>
             )}
 
             {!friendsLoading && groups.length > 0 && (
-                <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-4">
+                <div className={`rounded-2xl border p-4 space-y-4 ${surface}`}>
                     <div className="flex items-end justify-between gap-3">
                         <div>
-                            <p className="text-sm font-semibold text-white">เลือกจากกลุ่ม</p>
-                            <p className="mt-1 text-xs text-gray-500">กดเลือกทั้งกลุ่ม หรือเพิ่มชื่อเข้า group แล้วเลือกเข้ารอบนี้ได้ทันที</p>
+                            <p className={`text-sm font-semibold ${textMain}`}>เลือกจากกลุ่ม</p>
+                            <p className={`mt-1 text-xs ${textMuted}`}>กดเลือกทั้งกลุ่ม หรือเพิ่มชื่อเข้า group แล้วเลือกเข้ารอบนี้ได้ทันที</p>
                         </div>
-                        <span className="shrink-0 rounded-full bg-purple-500/10 px-2.5 py-1 text-xs font-semibold text-purple-200">
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${darkMode ? "bg-purple-500/10 text-purple-200" : "bg-sky-50 text-sky-700"}`}>
                             {groups.length} กลุ่ม
                         </span>
                     </div>
@@ -1103,11 +1129,11 @@ function buildSummaryText() {
                         {groups.map(group => {
                             const picked = group.members.filter(name => selected.includes(name)).length
                             return (
-                                <div key={group.id} className="rounded-2xl border border-white/10 bg-[#13131f] p-3">
+                                <div key={group.id} className={`rounded-2xl border p-3 ${surfaceSoft}`}>
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0">
-                                            <p className="truncate text-sm font-semibold text-white">{group.name}</p>
-                                            <p className="mt-1 text-xs text-gray-500">
+                                            <p className={`truncate text-sm font-semibold ${textMain}`}>{group.name}</p>
+                                            <p className={`mt-1 text-xs ${textMuted}`}>
                                                 สมาชิก {group.members.length} คน {picked > 0 ? `• เลือกแล้ว ${picked} คน` : ""}
                                             </p>
                                         </div>
@@ -1121,7 +1147,7 @@ function buildSummaryText() {
 
                                     <div className="mt-3 flex flex-wrap gap-1.5">
                                         {group.members.length === 0 ? (
-                                            <span className="text-xs text-gray-600">ยังไม่มีสมาชิก</span>
+                                            <span className={`text-xs ${textSubtle}`}>ยังไม่มีสมาชิก</span>
                                         ) : group.members.map(name => {
                                             const on = selected.includes(name)
                                             return (
@@ -1129,7 +1155,7 @@ function buildSummaryText() {
                                                     key={name}
                                                     onClick={() => togglePerson(name)}
                                                     className={`rounded-full px-2.5 py-1 text-xs font-medium transition-all ${
-                                                        on ? "bg-purple-600 text-white" : "bg-[#1c1c2e] text-gray-400 border border-gray-700"
+                                                        on ? "bg-purple-600 text-white" : inactiveChipSoft
                                                     }`}
                                                 >
                                                     {on ? "✓ " : ""}{name}
@@ -1141,7 +1167,7 @@ function buildSummaryText() {
                                     <div className="mt-3 flex gap-2">
                                         <input
                                             list={`setup-group-members-${group.id}`}
-                                            className="min-w-0 flex-1 rounded-xl border border-gray-700 bg-[#1c1c2e] px-3 py-2 text-sm outline-none focus:border-purple-500"
+                                            className={`min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none ${inputSoftClass}`}
                                             placeholder="เพิ่มชื่อเข้า group นี้..."
                                             value={newGroupMemberInputs[group.id] || ""}
                                             onChange={e => setNewGroupMemberInputs(prev => ({ ...prev, [group.id]: e.target.value }))}
@@ -1166,14 +1192,14 @@ function buildSummaryText() {
                 </div>
             )}
 
-            <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-2">
+            <div className={`rounded-2xl border p-4 space-y-2 ${surface}`}>
                 <div>
-                    <p className="text-sm font-semibold text-white">เลือกทีละคน</p>
-                    <p className="mt-1 text-xs text-gray-500">พิมพ์ชื่อใหม่เพื่อเพิ่มเข้ารายชื่อเพื่อนและเลือกเข้ารอบนี้</p>
+                    <p className={`text-sm font-semibold ${textMain}`}>เลือกทีละคน</p>
+                    <p className={`mt-1 text-xs ${textMuted}`}>พิมพ์ชื่อใหม่เพื่อเพิ่มเข้ารายชื่อเพื่อนและเลือกเข้ารอบนี้</p>
                 </div>
-                <div className="flex gap-2 rounded-xl bg-[#13131f] p-2">
+                <div className={`flex gap-2 rounded-xl p-2 ${actionPanel}`}>
                     <input
-                        className="min-w-0 flex-1 bg-[#1c1c2e] border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500"
+                        className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm outline-none ${inputSoftClass}`}
                         placeholder="พิมพ์ชื่อเพื่อนใหม่ หรือชื่อเดิม..."
                         value={newFriendInput}
                         onChange={e => setNewFriendInput(e.target.value)}
@@ -1189,15 +1215,15 @@ function buildSummaryText() {
                     </button>
                 </div>
                 {friendsLoading
-                    ? <p className="text-sm text-gray-700 text-center py-2">กำลังโหลดรายชื่อ...</p>
+                    ? <p className={`text-sm text-center py-2 ${textSubtle}`}>กำลังโหลดรายชื่อ...</p>
                     : friends.length === 0
-                    ? <p className="text-sm text-gray-700 text-center py-2">พิมพ์ชื่อด้านบนเพื่อเพิ่มคนเข้ารอบได้เลย</p>
+                    ? <p className={`text-sm text-center py-2 ${textSubtle}`}>พิมพ์ชื่อด้านบนเพื่อเพิ่มคนเข้ารอบได้เลย</p>
                     : <div className="flex flex-wrap gap-2">
                         {friends.map(f => {
                             const on = selected.includes(f.name)
                             return (
                                 <button key={f.id} onClick={() => togglePerson(f.name)}
-                                    className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${on ? "bg-purple-600 text-white" : "bg-[#13131f] text-gray-400 border border-gray-700"
+                                    className={`px-3 py-2 rounded-xl text-sm font-medium transition-all ${on ? "bg-purple-600 text-white" : inactiveChip
                                         }`}>
                                     {f.name}
                                 </button>
@@ -1207,8 +1233,8 @@ function buildSummaryText() {
                 }
                 {selected.length > 0 && (
                     <div className="rounded-xl border border-purple-500/20 bg-purple-500/10 px-3 py-2">
-                        <p className="text-xs font-medium text-purple-200">คนร่วมรอบนี้ {selected.length} คน</p>
-                        <p className="mt-1 text-xs text-gray-400">{selected.join(", ")}</p>
+                        <p className={`text-xs font-medium ${darkMode ? "text-purple-200" : "text-purple-700"}`}>คนร่วมรอบนี้ {selected.length} คน</p>
+                        <p className={`mt-1 text-xs ${darkMode ? "text-gray-400" : "text-slate-600"}`}>{selected.join(", ")}</p>
                     </div>
                 )}
             </div>
@@ -1216,7 +1242,7 @@ function buildSummaryText() {
             <button
                 onClick={startRound}
                 disabled={savingAction === "start" || friendsLoading}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-2xl text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
+                className="w-full bg-emerald-600 hover:bg-emerald-500 py-3 rounded-2xl text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
                 {savingAction === "start" ? "กำลังเริ่มรอบ..." : "เริ่มรอบนี้ →"}
             </button>
         </div>
@@ -1224,35 +1250,35 @@ function buildSummaryText() {
 
     // ─── ITEMS ───────────────────────────────────────────────
     if (step === "items") return (
-        <div className="space-y-4">
+        <div className={`space-y-4 ${textMain}`}>
             <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-lg font-semibold">{round.name}</h1>
-                    <p className="text-xs text-gray-600">{selected.join(", ")}</p>
+                    <p className={`text-xs ${textSubtle}`}>{selected.join(", ")}</p>
                 </div>
                 <button
                     onClick={finishRound}
                     disabled={savingAction === "finish"}
-                    className="bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded-xl text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60">
+                    className="bg-purple-600 hover:bg-purple-500 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">
                     {savingAction === "finish" ? "กำลังสรุป..." : "สรุปยอด →"}
                 </button>
             </div>
 
-            <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-3">
+            <div className={`rounded-2xl border p-4 space-y-3 ${surface}`}>
                 <div className="flex justify-between items-start gap-3">
                     <div>
-                        <p className="text-xs text-gray-500">พร้อมเพย์รับเงิน</p>
+                        <p className={`text-xs ${textMuted}`}>พร้อมเพย์รับเงิน</p>
                         {ownerPayment?.promptpay && !showPromptpayForm ? (
                             <p className="text-lg font-semibold text-emerald-400 mt-1">{ownerPayment.promptpay}</p>
                         ) : (
-                            <p className="text-xs text-gray-600 mt-0.5">ใส่ครั้งเดียว ระบบจะใส่ในข้อความสรุปทุกครั้ง</p>
+                            <p className={`text-xs mt-0.5 ${textSubtle}`}>ใส่ครั้งเดียว ระบบจะใส่ในข้อความสรุปทุกครั้ง</p>
                         )}
                     </div>
                     <button
                         onClick={() => setShowPromptpayForm(v => !v)}
                         title={ownerPayment?.promptpay ? "แก้" : "เพิ่ม"}
                         aria-label={ownerPayment?.promptpay ? "แก้" : "เพิ่ม"}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-[#13131f] text-emerald-400 transition-colors hover:text-emerald-300"
+                        className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border text-emerald-500 transition-colors hover:text-emerald-400 ${darkMode ? "border-white/10 bg-[#13131f]" : "border-slate-200 bg-white shadow-sm"}`}
                     >
                         {ownerPayment?.promptpay ? <EditIcon /> : <PlusIcon />}
                     </button>
@@ -1261,7 +1287,7 @@ function buildSummaryText() {
                     <div className="flex gap-2">
                         <input
                             ref={ownerPromptpayRef}
-                            className="flex-1 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
+                            className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none ${inputClass}`}
                             placeholder="เบอร์พร้อมเพย์ที่ให้เพื่อนโอน"
                             value={ownerPromptpay}
                             onChange={e => setOwnerPromptpay(e.target.value)}
@@ -1278,9 +1304,9 @@ function buildSummaryText() {
             </div>
 
             {/* อัปสลิป */}
-            <div className="bg-[#1c1c2e] rounded-2xl p-4">
-                <p className="text-xs text-gray-500 mb-3">อัปโหลดสลิป / เมนู</p>
-                <label className={`flex items-center justify-center gap-2 border-2 border-dashed rounded-xl p-4 cursor-pointer transition-colors ${scanning ? "border-purple-500 text-purple-400" : "border-gray-700 hover:border-purple-500 text-gray-500"
+            <div className={`rounded-2xl border p-4 ${surface}`}>
+                <p className={`text-xs mb-3 ${textMuted}`}>อัปโหลดสลิป / เมนู</p>
+                <label className={`flex items-center justify-center gap-2 border-2 border-dashed rounded-xl p-4 cursor-pointer transition-colors ${scanning ? "border-purple-500 text-purple-500" : darkMode ? "border-gray-700 hover:border-purple-500 text-gray-500" : "border-slate-300 hover:border-sky-400 text-slate-500"
                     }`}>
                     <input type="file" accept="image/*" className="hidden" onChange={handleScan} disabled={scanning} />
                     {scanning ? (
@@ -1291,36 +1317,36 @@ function buildSummaryText() {
                     ) : "แตะเพื่ออัปโหลดสลิป / เมนู"}
                 </label>
                 {scanning && (
-                    <div className="mt-3 rounded-xl border border-purple-500/20 bg-purple-500/10 px-3 py-2 text-xs leading-5 text-purple-200">
+                    <div className={`mt-3 rounded-xl border border-purple-500/20 bg-purple-500/10 px-3 py-2 text-xs leading-5 ${darkMode ? "text-purple-200" : "text-purple-700"}`}>
                         ระบบจะแสดงรายการหลังอ่านสลิปและบันทึกครบทั้งหมด เพื่อไม่ให้รายการกระพริบทีละแถว
                     </div>
                 )}
                 {scanError && <p className="text-red-400 text-xs mt-2">{scanError}</p>}
                 {scanMessage && <p className="text-emerald-400 text-xs mt-2">{scanMessage}</p>}
-                <p className="mt-2 text-[11px] text-gray-500">บันทึกแล้ว กลับมาใช้ Harbill ทริปถัดไปได้เลย</p>
+                <p className={`mt-2 text-[11px] ${textMuted}`}>บันทึกแล้ว กลับมาใช้ Harbill ทริปถัดไปได้เลย</p>
                 <button
                     type="button"
                     onClick={focusManualAdd}
-                    className="mt-3 w-full rounded-xl border border-white/10 bg-[#13131f] py-2 text-sm font-medium text-gray-300 transition-colors hover:border-emerald-500/60 hover:text-white"
+                    className={`mt-3 w-full rounded-xl border py-2 text-sm font-medium transition-colors ${secondaryButton}`}
                 >
                     + เพิ่มรายการเอง
                 </button>
             </div>
 
             {/* เพิ่มรายการเอง */}
-            <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-2">
-                <p className="text-xs text-gray-500">เพิ่มรายการเอง</p>
+            <div className={`rounded-2xl border p-4 space-y-2 ${surface}`}>
+                <p className={`text-xs ${textMuted}`}>เพิ่มรายการเอง</p>
                 <div className="flex gap-2">
                     <input
                         ref={manualNameRef}
-                        className="flex-1 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
+                        className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none ${inputClass}`}
                         placeholder="ชื่อรายการ..."
                         value={manualName}
                         onChange={e => setManualName(e.target.value)}
                         onKeyDown={e => e.key === "Enter" && addManual()}
                     />
                     <input
-                        className="w-24 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
+                        className={`w-24 rounded-xl border px-3 py-2 text-sm outline-none ${inputClass}`}
                         placeholder="ราคา"
                         type="number"
                         value={manualPrice}
@@ -1336,14 +1362,14 @@ function buildSummaryText() {
                 </div>
             </div>
 
-            <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-3">
+            <div className={`rounded-2xl border p-4 space-y-3 ${surface}`}>
                 <div className="flex justify-between items-center gap-3">
                     <div>
-                        <p className="text-xs text-gray-500">เช็กยอดรวมจากสลิป</p>
-                        <p className="text-xs text-gray-600 mt-0.5">ใส่ยอดท้ายสลิปเพื่อเทียบกับรายการที่เพิ่มแล้ว</p>
+                        <p className={`text-xs ${textMuted}`}>เช็กยอดรวมจากสลิป</p>
+                        <p className={`text-xs mt-0.5 ${textSubtle}`}>ใส่ยอดท้ายสลิปเพื่อเทียบกับรายการที่เพิ่มแล้ว</p>
                     </div>
                     <input
-                        className="w-32 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm text-right outline-none focus:border-purple-500"
+                        className={`w-32 rounded-xl border px-3 py-2 text-sm text-right outline-none ${inputClass}`}
                         placeholder="ยอดสลิป"
                         type="number"
                         value={receiptTotal}
@@ -1361,14 +1387,14 @@ function buildSummaryText() {
                 )}
             </div>
 
-            <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-3">
+            <div className={`rounded-2xl border p-4 space-y-3 ${surface}`}>
                 <div className="flex justify-between items-center gap-3">
                     <div>
-                        <p className="text-xs text-gray-500">ส่วนลดพิเศษทั้งบิล</p>
-                        <p className="text-xs text-gray-600 mt-0.5">เช่น ลดรวม 1000 แล้วกระจายให้คนในรอบ</p>
+                        <p className={`text-xs ${textMuted}`}>ส่วนลดพิเศษทั้งบิล</p>
+                        <p className={`text-xs mt-0.5 ${textSubtle}`}>เช่น ลดรวม 1000 แล้วกระจายให้คนในรอบ</p>
                     </div>
                     <input
-                        className="w-32 bg-[#13131f] border border-gray-700 rounded-xl px-3 py-2 text-sm text-right outline-none focus:border-purple-500"
+                        className={`w-32 rounded-xl border px-3 py-2 text-sm text-right outline-none ${inputClass}`}
                         placeholder="0"
                         type="number"
                         value={discountAmount}
@@ -1378,11 +1404,11 @@ function buildSummaryText() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                     <button onClick={() => setDiscountMode("equal")}
-                        className={`py-2 rounded-xl text-xs font-medium ${discountMode === "equal" ? "bg-purple-600 text-white" : "bg-[#13131f] text-gray-500 border border-gray-700"}`}>
+                        className={`py-2 rounded-xl text-xs font-medium ${discountMode === "equal" ? "bg-purple-600 text-white" : inactiveChip}`}>
                         เฉลี่ยเท่ากัน
                     </button>
                     <button onClick={() => setDiscountMode("weighted")}
-                        className={`py-2 rounded-xl text-xs font-medium ${discountMode === "weighted" ? "bg-purple-600 text-white" : "bg-[#13131f] text-gray-500 border border-gray-700"}`}>
+                        className={`py-2 rounded-xl text-xs font-medium ${discountMode === "weighted" ? "bg-purple-600 text-white" : inactiveChip}`}>
                         ตามสัดส่วนยอด
                     </button>
                 </div>
@@ -1396,9 +1422,9 @@ function buildSummaryText() {
 
             {/* รายการ + เลือกคนหาร */}
             {items.length > 0 && (
-                <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-3">
+                <div className={`rounded-2xl border p-4 space-y-3 ${surface}`}>
                     <div className="flex justify-between items-center">
-                        <p className="text-xs text-gray-500">รายการ — แตะชื่อเพื่อเลือก/ยกเลิกหาร</p>
+                        <p className={`text-xs ${textMuted}`}>รายการ — แตะชื่อเพื่อเลือก/ยกเลิกหาร</p>
                         <div className="flex gap-3">
                             {/* ปุ่มเพิ่มเพื่อนใหม่ inline */}
                             <button
@@ -1412,9 +1438,9 @@ function buildSummaryText() {
 
                     {/* inline add friend */}
                     {showAddFriend && (
-                        <div className="flex gap-2 bg-[#13131f] p-2 rounded-xl">
+                        <div className={`flex gap-2 p-2 rounded-xl ${actionPanel}`}>
                             <input
-                                className="flex-1 bg-[#1c1c2e] border border-gray-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500"
+                                className={`flex-1 rounded-lg border px-3 py-2 text-sm outline-none ${inputSoftClass}`}
                                 placeholder="ชื่อเพื่อนใหม่..."
                                 value={newFriendInput}
                                 onChange={e => setNewFriendInput(e.target.value)}
@@ -1432,19 +1458,19 @@ function buildSummaryText() {
                         const perHead = sp.length > 0 ? (item.price / sp.length).toFixed(2) : "-"
                         const isEditing = editingItemId === item.id
                         return (
-                            <div key={item.id} className="bg-[#13131f] rounded-xl p-3 space-y-2">
+                            <div key={item.id} className={`rounded-xl border p-3 space-y-2 ${surfaceSoft}`}>
                                 {isEditing ? (
                                     <div className="space-y-2">
                                         <div className="flex gap-2">
                                             <input
-                                                className="flex-1 bg-[#1c1c2e] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
+                                                className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none ${inputSoftClass}`}
                                                 placeholder="ชื่อรายการ"
                                                 value={editingName}
                                                 onChange={e => setEditingName(e.target.value)}
                                                 onKeyDown={e => e.key === "Enter" && saveEditItem()}
                                             />
                                             <input
-                                                className="w-28 bg-[#1c1c2e] border border-gray-700 rounded-xl px-3 py-2 text-sm outline-none focus:border-purple-500"
+                                                className={`w-28 rounded-xl border px-3 py-2 text-sm outline-none ${inputSoftClass}`}
                                                 placeholder="ราคา"
                                                 type="number"
                                                 value={editingPrice}
@@ -1456,14 +1482,14 @@ function buildSummaryText() {
                                             <button onClick={saveEditItem}
                                                 title="บันทึก"
                                                 aria-label="บันทึก"
-                                                className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-sm font-medium">
+                                                className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 py-2 rounded-xl text-sm font-medium text-white">
                                                 <SaveIcon />
                                                 <span>บันทึก</span>
                                             </button>
                                             <button onClick={cancelEditItem}
                                                 title="ยกเลิก"
                                                 aria-label="ยกเลิก"
-                                                className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#1c1c2e] text-gray-500 hover:bg-[#252540] hover:text-white">
+                                                className={`inline-flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${darkMode ? "bg-[#1c1c2e] text-gray-500 hover:bg-[#252540] hover:text-white" : "bg-white text-slate-500 hover:bg-slate-200 hover:text-slate-950"}`}>
                                                 <CloseIcon />
                                             </button>
                                         </div>
@@ -1472,33 +1498,33 @@ function buildSummaryText() {
                                     <div className="flex justify-between items-start">
                                         <div>
                                             <p className="text-sm font-medium">{item.name}</p>
-                                            <p className="text-xs text-gray-600 mt-0.5">
+                                            <p className={`text-xs mt-0.5 ${textSubtle}`}>
                                                 {sp.length > 0 ? `หาร ${sp.length} คน • คนละ ฿${perHead}` : "ยังไม่ได้เลือกคน"}
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <span className="text-emerald-400 text-sm">฿{formatAmount(item.price)}</span>
-                                            <button onClick={() => startEditItem(item)} title="แก้ไข" aria-label="แก้ไข" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-gray-500 hover:bg-purple-600 hover:text-white">
+                                            <button onClick={() => startEditItem(item)} title="แก้ไข" aria-label="แก้ไข" className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${darkMode ? "bg-white/5 text-gray-500 hover:bg-purple-600 hover:text-white" : "bg-slate-100 text-slate-500 hover:bg-purple-600 hover:text-white"}`}>
                                                 <EditIcon />
                                             </button>
-                                            <button onClick={() => deleteItem(item.id)} title="ลบ" aria-label="ลบ" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-gray-600 hover:bg-red-600 hover:text-white">
+                                            <button onClick={() => deleteItem(item.id)} title="ลบ" aria-label="ลบ" className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${darkMode ? "bg-white/5 text-gray-600 hover:bg-red-600 hover:text-white" : "bg-slate-100 text-slate-500 hover:bg-red-600 hover:text-white"}`}>
                                                 <TrashIcon />
                                             </button>
                                         </div>
                                     </div>
                                 )}
-                                <div className="flex flex-wrap gap-1.5 border-t border-gray-800 pt-2">
+                                <div className={`flex flex-wrap gap-1.5 border-t pt-2 ${darkMode ? "border-gray-800" : "border-slate-200"}`}>
                                     <button onClick={() => setItemSplit(item.id, selected)}
                                         className="px-2.5 py-1 rounded-full text-xs bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60">
                                         ทุกคน
                                     </button>
                                     <button onClick={() => setItemSplit(item.id, [])}
-                                        className="px-2.5 py-1 rounded-full text-xs bg-[#1c1c2e] text-gray-500 border border-gray-700 hover:text-gray-300">
+                                        className={`px-2.5 py-1 rounded-full text-xs ${inactiveChipSoft}`}>
                                         เคลียร์
                                     </button>
                                     {index > 0 && (
                                         <button onClick={() => copySplitFromPrevious(index)}
-                                            className="px-2.5 py-1 rounded-full text-xs bg-[#1c1c2e] text-purple-300 border border-purple-900/60 hover:border-purple-500">
+                                            className={`px-2.5 py-1 rounded-full text-xs ${darkMode ? "border border-purple-900/60 bg-[#1c1c2e] text-purple-300 hover:border-purple-500" : "border border-purple-200 bg-purple-50 text-purple-700 hover:border-purple-400"}`}>
                                             เหมือนรายการก่อน
                                         </button>
                                     )}
@@ -1508,7 +1534,7 @@ function buildSummaryText() {
                                         const on = sp.includes(name)
                                         return (
                                             <button key={name} onClick={() => toggleSplit(item.id, name)}
-                                                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${on ? "bg-purple-600 text-white" : "bg-[#1c1c2e] text-gray-500 border border-gray-700"
+                                                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${on ? "bg-purple-600 text-white" : inactiveChipSoft
                                                     }`}>
                                                 {on ? "✓ " : ""}{name}
                                             </button>
@@ -1519,8 +1545,8 @@ function buildSummaryText() {
                         )
                     })}
 
-                    <div className="flex justify-between text-sm pt-2 border-t border-gray-800">
-                        <span className="text-gray-500">รวม</span>
+                    <div className={`flex justify-between text-sm pt-2 border-t ${darkMode ? "border-gray-800" : "border-slate-200"}`}>
+                        <span className={textMuted}>รวม</span>
                         <span className="text-emerald-400 font-semibold">฿{formatAmount(grandTotal)}</span>
                     </div>
                 </div>
@@ -1530,28 +1556,28 @@ function buildSummaryText() {
 
     // ─── SUMMARY ─────────────────────────────────────────────
     return (
-        <div className="space-y-4">
+        <div className={`space-y-4 ${textMain}`}>
             <div className="flex justify-between items-center">
                 <h1 className="text-lg font-semibold">สรุปรอบ: {round.name}</h1>
                 <div className="flex gap-2">
-                    <IconButton onClick={backToEdit} title="แก้ไขรอบ">
+                    <IconButton onClick={backToEdit} title="แก้ไขรอบ" darkMode={darkMode}>
                         <EditIcon />
                     </IconButton>
-                    <IconButton onClick={resetRound} title="เปิดรอบใหม่">
+                    <IconButton onClick={resetRound} title="เปิดรอบใหม่" darkMode={darkMode}>
                         <PlusIcon />
                     </IconButton>
                 </div>
             </div>
 
-            <div className="bg-[#1c1c2e] rounded-2xl p-4 space-y-3">
-                <p className="text-xs text-gray-500">เทมเพลตข้อความ</p>
+            <div className={`rounded-2xl border p-4 space-y-3 ${surface}`}>
+                <p className={`text-xs ${textMuted}`}>เทมเพลตข้อความ</p>
                 <div className="grid grid-cols-4 gap-2">
                     {SUMMARY_TEMPLATES.map(template => (
                         <button key={template.id}
                             onClick={() => setSummaryTemplate(template.id)}
                             className={`py-2 rounded-xl text-xs font-medium transition-all ${summaryTemplate === template.id
                                 ? "bg-purple-600 text-white"
-                                : "bg-[#13131f] text-gray-500 border border-gray-700 hover:text-gray-300"
+                                : inactiveChip
                                 }`}>
                             {template.label}
                         </button>
@@ -1600,27 +1626,27 @@ function buildSummaryText() {
             )}
 
             {/* preview ข้อความ */}
-            <div className="bg-[#1c1c2e] rounded-2xl p-4">
-                <p className="text-xs text-gray-500 mb-2">ตัวอย่างข้อความ</p>
-                <pre className="text-xs text-gray-400 whitespace-pre-wrap font-mono leading-relaxed">
+            <div className={`rounded-2xl border p-4 ${surface}`}>
+                <p className={`text-xs mb-2 ${textMuted}`}>ตัวอย่างข้อความ</p>
+                <pre className={`text-xs whitespace-pre-wrap font-mono leading-relaxed ${darkMode ? "text-gray-400" : "text-slate-600"}`}>
                     {buildSummaryText()}
                 </pre>
             </div>
 
             {showQrCopyPanel && (
                 <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/65 px-4 pb-4 pt-16 backdrop-blur-sm sm:items-center">
-                    <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-[#181827] shadow-2xl shadow-black/40">
-                        <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                    <div className={`w-full max-w-lg overflow-hidden rounded-3xl border shadow-2xl ${darkMode ? "border-white/10 bg-[#181827] shadow-black/40" : "border-slate-200 bg-white shadow-slate-900/20"}`}>
+                        <div className={`flex items-center justify-between gap-3 border-b px-4 py-3 ${darkMode ? "border-white/10" : "border-slate-200"}`}>
                             <div>
-                                <p className="text-sm font-semibold text-white">คัดลอก QR</p>
-                                <p className="text-xs text-gray-500 mt-0.5">{qrCopyModalMessage || "กดคัดลอกรูปทีละคน แล้ววางในแชทได้เลย"}</p>
+                                <p className={`text-sm font-semibold ${textMain}`}>คัดลอก QR</p>
+                                <p className={`text-xs mt-0.5 ${textMuted}`}>{qrCopyModalMessage || "กดคัดลอกรูปทีละคน แล้ววางในแชทได้เลย"}</p>
                             </div>
                             <button
                                 onClick={() => {
                                     setShowQrCopyPanel(false)
                                     setQrCopyModalMessage("")
                                 }}
-                                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-gray-400 transition-all hover:bg-white/10 hover:text-white"
+                                className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-all ${darkMode ? "border-white/10 bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white" : "border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-950"}`}
                                 title="ปิด"
                                 aria-label="ปิด"
                             >
@@ -1633,8 +1659,8 @@ function buildSummaryText() {
                                     {selected.filter(name => qrCodes[name]).map(name => {
                                         const amount = totals[name] || 0
                                         return (
-                                            <div key={name} className="rounded-2xl border border-white/10 bg-[#10101a] p-3 text-center shadow-lg shadow-black/10">
-                                                <p className="truncate text-sm font-semibold text-white">{name}</p>
+                                            <div key={name} className={`rounded-2xl border p-3 text-center shadow-lg ${darkMode ? "border-white/10 bg-[#10101a] shadow-black/10" : "border-slate-200 bg-slate-50 shadow-slate-900/5"}`}>
+                                                <p className={`truncate text-sm font-semibold ${textMain}`}>{name}</p>
                                                 <p className="mt-0.5 text-xs font-semibold text-purple-300">฿{formatAmount(amount)}</p>
                                                 <div className="my-3 rounded-2xl bg-white p-2">
                                                     <img src={qrCodes[name]} alt={`QR พร้อมเพย์ ${name}`} className="mx-auto aspect-square w-full max-w-36" />
@@ -1651,7 +1677,7 @@ function buildSummaryText() {
                                     })}
                                 </div>
                             ) : (
-                                <div className="rounded-2xl border border-white/10 bg-[#10101a] p-6 text-center text-sm text-gray-300">
+                                <div className={`rounded-2xl border p-6 text-center text-sm ${darkMode ? "border-white/10 bg-[#10101a] text-gray-300" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
                                     <p>{qrCopyModalMessage || "ยังไม่มี QR ให้แสดงในตอนนี้"}</p>
                                 </div>
                             )}
@@ -1661,28 +1687,28 @@ function buildSummaryText() {
             )}
 
             {/* card สำหรับ screenshot — ใส่ ref ตรงนี้ */}
-            <div className="bg-[#13131f] rounded-2xl p-5 space-y-4">
+            <div className={`rounded-2xl border p-5 space-y-4 ${surfaceSoft}`}>
                 {/* header */}
-                <div className="text-center border-b border-gray-800 pb-4">
-                    <p className="text-base font-bold text-white">🍽️ {round.name}</p>
-                    <p className="text-xs text-gray-500 mt-1">
+                <div className={`text-center border-b pb-4 ${darkMode ? "border-gray-800" : "border-slate-200"}`}>
+                    <p className={`text-base font-bold ${textMain}`}>🍽️ {round.name}</p>
+                    <p className={`text-xs mt-1 ${textMuted}`}>
                         {new Date().toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" })}
                     </p>
                 </div>
 
                 {/* รายการ */}
                 <div className="space-y-1.5">
-                    <p className="text-xs text-gray-600 mb-2">รายการ</p>
+                    <p className={`text-xs mb-2 ${textSubtle}`}>รายการ</p>
                     {items.map(item => {
                         return (
                             <div key={item.id} className="flex justify-between text-sm">
-                                <span className="text-gray-300">{item.name}</span>
+                                <span className={darkMode ? "text-gray-300" : "text-slate-700"}>{item.name}</span>
                                 <span className="text-emerald-400">฿{formatAmount(item.price)}</span>
                             </div>
                         )
                     })}
-                    <div className="flex justify-between text-sm font-semibold pt-2 border-t border-gray-800 mt-2">
-                        <span className="text-gray-400">รวม</span>
+                    <div className={`flex justify-between text-sm font-semibold pt-2 border-t mt-2 ${darkMode ? "border-gray-800" : "border-slate-200"}`}>
+                        <span className={darkMode ? "text-gray-400" : "text-slate-600"}>รวม</span>
                         <span className="text-emerald-400">฿{formatAmount(grandTotal)}</span>
                     </div>
                     {discount > 0 && (
@@ -1691,8 +1717,8 @@ function buildSummaryText() {
                                 <span>ส่วนลดรวม ({discountMode === "weighted" ? "ตามสัดส่วนยอด" : "เฉลี่ยเท่ากัน"})</span>
                                 <span>- ฿{formatAmount(discount)}</span>
                             </div>
-                            <div className="flex justify-between text-sm font-semibold pt-2 border-t border-gray-800 mt-2">
-                                <span className="text-gray-400">ยอดเก็บหลังหัก</span>
+                            <div className={`flex justify-between text-sm font-semibold pt-2 border-t mt-2 ${darkMode ? "border-gray-800" : "border-slate-200"}`}>
+                                <span className={darkMode ? "text-gray-400" : "text-slate-600"}>ยอดเก็บหลังหัก</span>
                                 <span className="text-emerald-400">฿{formatAmount(collectTotal)}</span>
                             </div>
                         </>
@@ -1700,18 +1726,18 @@ function buildSummaryText() {
                 </div>
 
                 {ownerPayment?.promptpay && (
-                    <div className="border-t border-gray-800 pt-4">
-                        <div className="bg-emerald-900/30 border border-emerald-800/60 rounded-xl px-4 py-3 text-center">
-                            <p className="text-xs text-emerald-200">โอนเข้า {ownerName}</p>
+                    <div className={`border-t pt-4 ${darkMode ? "border-gray-800" : "border-slate-200"}`}>
+                        <div className={`rounded-xl border px-4 py-3 text-center ${darkMode ? "border-emerald-800/60 bg-emerald-900/30" : "border-emerald-200 bg-emerald-50"}`}>
+                            <p className={`text-xs ${darkMode ? "text-emerald-200" : "text-emerald-700"}`}>โอนเข้า {ownerName}</p>
                             <p className="text-lg font-semibold text-emerald-300 mt-0.5">พร้อมเพย์ {ownerPayment.promptpay}</p>
                         </div>
                     </div>
                 )}
 
                 {/* แต่ละคนจ่าย */}
-                <div className="space-y-3 border-t border-gray-800 pt-4">
+                <div className={`space-y-3 border-t pt-4 ${darkMode ? "border-gray-800" : "border-slate-200"}`}>
                     <div className="flex justify-between items-center">
-                        <p className="text-xs text-gray-600">💰 แต่ละคนจ่าย</p>
+                        <p className={`text-xs ${textSubtle}`}>💰 แต่ละคนจ่าย</p>
                         {ownerPayment?.promptpay && (
                             <p className="text-xs text-emerald-500">QR พร้อมสแกน</p>
                         )}
@@ -1723,28 +1749,28 @@ function buildSummaryText() {
   const myItems = items.filter(i => (i.splitWith || []).includes(name))
   return (
     <div key={name} className="space-y-2">
-      <div className="bg-[#10101a] border border-gray-800 rounded-xl overflow-hidden">
+      <div className={`rounded-xl border overflow-hidden ${darkMode ? "border-gray-800 bg-[#10101a]" : "border-slate-200 bg-white"}`}>
       <div className="flex justify-between items-start gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
-          <p className="text-base font-semibold text-white">{name}</p>
+          <p className={`text-base font-semibold ${textMain}`}>{name}</p>
           {discount > 0 && (
             <p className="text-xs text-emerald-600 mt-0.5">ก่อนลด ฿{formatAmount(beforeDiscount)} • ลด ฿{formatAmount(discountCut)}</p>
           )}
           {ownerPayment?.promptpay && (
-            <p className="text-xs text-gray-600 mt-1">โอนเข้า {ownerName}</p>
+            <p className={`text-xs mt-1 ${textSubtle}`}>โอนเข้า {ownerName}</p>
           )}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
           <div className="flex gap-1.5">
-            <button onClick={() => copyPersonImage(name)} title="คัดลอกรูป QR คนนี้" aria-label="คัดลอกรูป QR คนนี้" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-gray-500 hover:bg-emerald-600 hover:text-white transition-colors">
+            <button onClick={() => copyPersonImage(name)} title="คัดลอกรูป QR คนนี้" aria-label="คัดลอกรูป QR คนนี้" className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${darkMode ? "bg-white/5 text-gray-500 hover:bg-emerald-600 hover:text-white" : "bg-slate-100 text-slate-500 hover:bg-emerald-600 hover:text-white"}`}>
               <ImageCopyIcon />
             </button>
-            <button onClick={() => sharePersonImage(name)} title="แชร์รูปคนนี้" aria-label="แชร์รูปคนนี้" className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-gray-500 hover:bg-purple-600 hover:text-white transition-colors">
+            <button onClick={() => sharePersonImage(name)} title="แชร์รูปคนนี้" aria-label="แชร์รูปคนนี้" className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${darkMode ? "bg-white/5 text-gray-500 hover:bg-purple-600 hover:text-white" : "bg-slate-100 text-slate-500 hover:bg-purple-600 hover:text-white"}`}>
               <ShareIcon />
             </button>
           </div>
           <div className="text-right">
-          <p className="text-xs text-gray-600">ยอดโอน</p>
+          <p className={`text-xs ${textSubtle}`}>ยอดโอน</p>
           <p className="text-2xl font-bold text-purple-300">฿{formatAmount(amount)}</p>
           </div>
         </div>
@@ -1771,11 +1797,11 @@ function buildSummaryText() {
       )}
       </div>
       {myItems.length > 0 && (
-        <div className="px-4 pb-3 space-y-1 border-t border-gray-800">
+        <div className={`px-4 pb-3 space-y-1 border-t ${darkMode ? "border-gray-800" : "border-slate-200"}`}>
           {myItems.map(item => {
             const share = Math.ceil(item.price / (item.splitWith || []).length * 100) / 100
             return (
-              <div key={item.id} className="flex justify-between text-xs text-gray-600 pt-1">
+              <div key={item.id} className={`flex justify-between text-xs pt-1 ${textSubtle}`}>
                 <span>{item.name}</span>
                 <span>฿{formatAmount(share)}</span>
               </div>
@@ -1787,14 +1813,14 @@ function buildSummaryText() {
   )
 })}
                 </div>
-                <div className="border-t border-gray-800 pt-4 text-center">
-                    <p className="text-[11px] font-semibold text-gray-600">สร้างด้วย Harbill</p>
-                    <p className="mt-1 text-[11px] text-gray-700">{publicAppUrl}</p>
+                <div className={`border-t pt-4 text-center ${darkMode ? "border-gray-800" : "border-slate-200"}`}>
+                    <p className={`text-[11px] font-semibold ${textSubtle}`}>สร้างด้วย Harbill</p>
+                    <p className={`mt-1 text-[11px] ${darkMode ? "text-gray-700" : "text-slate-400"}`}>{publicAppUrl}</p>
                 </div>
             </div>
 
             <button onClick={resetRound}
-                className="w-full bg-[#1c1c2e] hover:bg-[#252540] py-3 rounded-2xl text-sm font-medium text-gray-400">
+                className={`w-full rounded-2xl border py-3 text-sm font-medium transition-colors ${secondaryButton}`}>
                 เปิดรอบใหม่
             </button>
         </div>
