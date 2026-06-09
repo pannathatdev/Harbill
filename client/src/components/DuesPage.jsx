@@ -37,8 +37,8 @@ const copy = {
     slipAttached: "แนบสลิปแล้ว",
     close: "ปิด",
     copyLink: "คัดลอกลิงก์",
-    linkHelp: "ลิงก์นี้เป็นตัวอย่างหน้าชำระเงิน ขั้นถัดไปต้องต่อ route /pay และฐานข้อมูลจริง",
-    dataNote: "Prototype นี้ยังไม่อัปโหลดไฟล์ขึ้น server สลิปจะแสดงได้ใน session ปัจจุบันเท่านั้น",
+    linkHelp: "ส่งลิงก์นี้ให้คนจ่าย เขาจะเห็น QR ตามยอดจริงและอัปโหลดสลิปกลับเข้าระบบได้",
+    dataNote: "สลิปนี้โหลดจากฐานข้อมูลของรายการค้าง และจะยังอยู่ให้ตรวจย้อนหลังหลังรีเฟรชหน้า",
     loading: "กำลังโหลดข้อมูลยอดค้าง...",
   },
   en: {
@@ -74,8 +74,8 @@ const copy = {
     slipAttached: "Slip attached",
     close: "Close",
     copyLink: "Copy link",
-    linkHelp: "This is a payment-page preview. The next step is wiring /pay and the real database.",
-    dataNote: "This prototype does not upload files yet. Slip previews are available only in the current session.",
+    linkHelp: "Send this link to the payer. They can scan the exact QR amount and upload the slip back into this record.",
+    dataNote: "This slip is loaded from the due record and remains available after refresh.",
     loading: "Loading dues...",
   },
 }
@@ -341,6 +341,29 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
     showNotice(t.slipAttached)
   }
 
+  async function openSlipModal(item) {
+    if (item.slipUrl?.startsWith("blob:")) {
+      setSlipModal(item)
+      return
+    }
+
+    if (!usingDatabase || !item.slipName) return
+
+    try {
+      const blob = await api.getDueSlipBlob(item.id)
+      const slipUrl = URL.createObjectURL(blob)
+      const next = {
+        ...item,
+        slipUrl,
+        slipType: item.slipType || blob.type || "file",
+      }
+      setItems(prev => prev.map(row => row.id === item.id ? { ...row, slipUrl, slipType: next.slipType } : row))
+      setSlipModal(next)
+    } catch (err) {
+      showNotice(err.message || "เปิดสลิปไม่ได้")
+    }
+  }
+
   const page = darkMode ? "bg-[#0f172a] text-slate-100" : "bg-[#f5f7fb] text-slate-950"
   const panel = darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"
   const softPanel = darkMode ? "border-slate-800 bg-slate-950/60" : "border-slate-100 bg-slate-50"
@@ -478,9 +501,9 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
                         >
                           {item.status === "paid" ? <UndoIcon /> : <CheckIcon />}
                         </button>
-                        {item.slipUrl && (
+                        {(item.slipUrl || item.slipName) && (
                           <button
-                            onClick={() => setSlipModal(item)}
+                            onClick={() => openSlipModal(item)}
                             title={t.viewSlip}
                             aria-label={t.viewSlip}
                             className={iconButton}

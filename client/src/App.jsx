@@ -142,14 +142,14 @@ function Layout({ children, user, onLogout, lang, onLangChange, darkMode, onThem
   const nav = darkMode ? "border-white/10 bg-slate-950/95" : "border-slate-200 bg-white/95"
 
   return (
-    <div className={`min-h-screen ${shell}`}>
+    <div className={`min-h-screen overflow-x-hidden ${shell}`}>
       <div className={`sticky top-0 z-10 border-b backdrop-blur-sm ${topbar}`}>
-        <div className={`${contentWidth} mx-auto px-4 py-3 flex justify-between items-center`}>
+        <div className={`${contentWidth} mx-auto flex items-center justify-between gap-2 px-3 py-3 sm:px-4`}>
           <div className="flex items-center gap-2">
             <span className="text-xl">🍽️</span>
             <span className={`font-bold ${brandText}`}>Harbill</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             {user?.avatar && <img src={user.avatar} className="w-7 h-7 rounded-full" alt="" />}
             <span className={`hidden text-sm sm:inline ${mutedText}`}>{user?.name}</span>
             <button
@@ -183,7 +183,7 @@ function Layout({ children, user, onLogout, lang, onLangChange, darkMode, onThem
         </div>
       </div>
 
-      <div className={`${contentWidth} mx-auto px-4 pt-5 pb-28`}>
+      <div className={`${contentWidth} mx-auto px-3 pt-5 pb-28 sm:px-4`}>
         {children}
         {!isPro && path !== "/dues" && (
           <div className="mt-6 space-y-3">
@@ -196,7 +196,7 @@ function Layout({ children, user, onLogout, lang, onLangChange, darkMode, onThem
       <div className="fixed bottom-0 left-0 right-0 z-10">
         <div className={`${contentWidth} mx-auto`}>
           <div className={`rounded-t-3xl border-t backdrop-blur-sm ${nav}`}>
-            <div className="flex">
+            <div className="flex pb-[env(safe-area-inset-bottom)]">
               {TABS.map(t => {
                 const active = path === t.id
                 const label = lang === "th" ? t.labelTh : t.labelEn

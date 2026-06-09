@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS dues (
   due_month CHAR(7) NOT NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'unpaid',
   note TEXT NULL,
+  due_slip_id INT NULL,
   slip_name VARCHAR(255) NULL,
   slip_type VARCHAR(128) NULL,
   slip_uploaded_at DATETIME NULL,
@@ -101,6 +102,22 @@ CREATE TABLE IF NOT EXISTS dues (
   INDEX idx_dues_user_month (user_id, due_month),
   INDEX idx_dues_user_status (user_id, status),
   CONSTRAINT fk_dues_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS due_slips (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  payment_token VARCHAR(64) NULL,
+  person_name VARCHAR(255) NOT NULL,
+  due_month CHAR(7) NOT NULL,
+  amount_paid DECIMAL(10,2) NULL,
+  file_name VARCHAR(255) NOT NULL,
+  file_type VARCHAR(128) NOT NULL,
+  file_data MEDIUMBLOB NOT NULL,
+  uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_due_slips_user_month (user_id, due_month),
+  INDEX idx_due_slips_token (payment_token),
+  CONSTRAINT fk_due_slips_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS due_payment_links (

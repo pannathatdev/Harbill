@@ -158,6 +158,7 @@ async function ensureDuesSchema() {
       due_month CHAR(7) NOT NULL,
       status VARCHAR(32) NOT NULL DEFAULT 'unpaid',
       note TEXT NULL,
+      due_slip_id INT NULL,
       slip_name VARCHAR(255) NULL,
       slip_type VARCHAR(128) NULL,
       slip_uploaded_at DATETIME NULL,
@@ -167,6 +168,24 @@ async function ensureDuesSchema() {
       INDEX idx_dues_user_month (user_id, due_month),
       INDEX idx_dues_user_status (user_id, status),
       CONSTRAINT fk_dues_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS due_slips (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      payment_token VARCHAR(64) NULL,
+      person_name VARCHAR(255) NOT NULL,
+      due_month CHAR(7) NOT NULL,
+      amount_paid DECIMAL(10,2) NULL,
+      file_name VARCHAR(255) NOT NULL,
+      file_type VARCHAR(128) NOT NULL,
+      file_data MEDIUMBLOB NOT NULL,
+      uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_due_slips_user_month (user_id, due_month),
+      INDEX idx_due_slips_token (payment_token),
+      CONSTRAINT fk_due_slips_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `)
 
@@ -182,6 +201,17 @@ async function ensureDuesSchema() {
       CONSTRAINT fk_due_payment_links_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `)
+
+  const [dueColumns] = await db.query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'dues'
+      AND COLUMN_NAME = 'due_slip_id'
+  `)
+  if (!dueColumns[0]) {
+    await db.query("ALTER TABLE dues ADD COLUMN due_slip_id INT NULL AFTER note")
+  }
 
   duesSchemaReady = true
 }
@@ -1148,6 +1178,7 @@ app.delete("/payment-info/:name", requireAuth, async (req, res) => {
 
 // ── DUES ──────────────────────────────────────────────────────
 function mapDue(row) {
+  const hasStoredSlip = Boolean(row.due_slip_id || row.slip_id)
   return {
     id: row.id,
     person: row.person_name,
@@ -1158,9 +1189,69 @@ function mapDue(row) {
     note: row.note || "",
     slipName: row.slip_name || "",
     slipType: row.slip_type || "",
+    slipUrl: hasStoredSlip ? `${API_BASE_URL}/dues/${row.id}/slip` : "",
     paidAt: row.paid_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }
+}
+
+function safeDownloadName(name) {
+  return String(name || "slip")
+    .replace(/[\\/:*?"<>|\r\n]+/g, "_")
+    .slice(0, 180) || "slip"
+}
+
+async function createDueSlip({ userId, token = null, person, month, amount, file }) {
+  const [result] = await db.query(`
+    INSERT INTO due_slips (user_id, payment_token, person_name, due_month, amount_paid, file_name, file_type, file_data)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    userId,
+    token,
+    person,
+    month,
+    Number.isFinite(Number(amount)) ? Number(amount) : null,
+    file.originalname,
+    file.mimetype || "application/octet-stream",
+    file.buffer
+  ])
+  return result.insertId
+}
+
+async function publicPaymentPayload(token) {
+  const [links] = await db.query("SELECT * FROM due_payment_links WHERE token=?", [token])
+  const link = links[0]
+  if (!link) return { status: 404, error: "Payment link not found" }
+  if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) {
+    return { status: 410, error: "Payment link expired" }
+  }
+
+  const [items] = await db.query(`
+    SELECT id, person_name, title, amount, due_month, status, note, due_slip_id, slip_name, slip_type, slip_uploaded_at, paid_at, created_at, updated_at
+    FROM dues
+    WHERE user_id=? AND person_name=? AND due_month=? AND status <> 'paid'
+    ORDER BY created_at DESC
+  `, [link.user_id, link.person_name, link.due_month])
+
+  const [ownerRows] = await db.query(`
+    SELECT friend_name, promptpay, display_name
+    FROM payment_info
+    WHERE user_id=? AND promptpay IS NOT NULL AND promptpay <> ''
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `, [link.user_id])
+
+  return {
+    status: 200,
+    body: {
+      person: link.person_name,
+      month: link.due_month,
+      items: items.map(mapDue),
+      total: items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+      payment: ownerRows[0] || null
+    },
+    link
   }
 }
 
@@ -1263,14 +1354,39 @@ app.patch("/dues/:id", requireAuth, async (req, res) => {
 app.post("/dues/:id/slip", requireAuth, upload.single("slip"), async (req, res) => {
   await ensureDuesSchema()
   if (!req.file) return res.status(400).json({ error: "Slip file required" })
+  const [dueRows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
+  const due = dueRows[0]
+  if (!due) return res.status(404).json({ error: "Due item not found" })
+  const slipId = await createDueSlip({
+    userId: req.user.id,
+    person: due.person_name,
+    month: due.due_month,
+    amount: due.amount,
+    file: req.file
+  })
   await db.query(`
     UPDATE dues
-    SET status='pending', slip_name=?, slip_type=?, slip_uploaded_at=NOW()
+    SET status='pending', due_slip_id=?, slip_name=?, slip_type=?, slip_uploaded_at=NOW()
     WHERE id=? AND user_id=?
-  `, [req.file.originalname, req.file.mimetype, req.params.id, req.user.id])
+  `, [slipId, req.file.originalname, req.file.mimetype, req.params.id, req.user.id])
   const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
-  if (!rows[0]) return res.status(404).json({ error: "Due item not found" })
   res.json(mapDue(rows[0]))
+})
+
+app.get("/dues/:id/slip", requireAuth, async (req, res) => {
+  await ensureDuesSchema()
+  const [rows] = await db.query(`
+    SELECT s.file_name, s.file_type, s.file_data
+    FROM dues d
+    JOIN due_slips s ON s.id = d.due_slip_id
+    WHERE d.id=? AND d.user_id=?
+    LIMIT 1
+  `, [req.params.id, req.user.id])
+  const slip = rows[0]
+  if (!slip) return res.status(404).json({ error: "Slip not found" })
+  res.setHeader("Content-Type", slip.file_type || "application/octet-stream")
+  res.setHeader("Content-Disposition", `inline; filename="${safeDownloadName(slip.file_name)}"`)
+  res.send(slip.file_data)
 })
 
 app.post("/dues/pay-link", requireAuth, async (req, res) => {
@@ -1306,35 +1422,38 @@ app.delete("/dues/:id", requireAuth, async (req, res) => {
 app.get("/pay/:token", async (req, res) => {
   await ensureDuesSchema()
   const token = String(req.params.token || "")
-  const [links] = await db.query("SELECT * FROM due_payment_links WHERE token=?", [token])
-  const link = links[0]
-  if (!link) return res.status(404).json({ error: "Payment link not found" })
-  if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) {
-    return res.status(410).json({ error: "Payment link expired" })
+  const result = await publicPaymentPayload(token)
+  if (result.status !== 200) return res.status(result.status).json({ error: result.error })
+  res.json(result.body)
+})
+
+app.post("/pay/:token/slip", upload.single("slip"), async (req, res) => {
+  await ensureDuesSchema()
+  if (!req.file) return res.status(400).json({ error: "Slip file required" })
+  const token = String(req.params.token || "")
+  const result = await publicPaymentPayload(token)
+  if (result.status !== 200) return res.status(result.status).json({ error: result.error })
+  const { link, body } = result
+  if (!body.items.length || Number(body.total || 0) <= 0) {
+    return res.status(400).json({ error: "No unpaid items for this payment link" })
   }
 
-  const [items] = await db.query(`
-    SELECT id, person_name, title, amount, due_month, status, note
-    FROM dues
-    WHERE user_id=? AND person_name=? AND due_month=? AND status <> 'paid'
-    ORDER BY created_at DESC
-  `, [link.user_id, link.person_name, link.due_month])
-
-  const [ownerRows] = await db.query(`
-    SELECT friend_name, promptpay, display_name
-    FROM payment_info
-    WHERE user_id=? AND promptpay IS NOT NULL AND promptpay <> ''
-    ORDER BY updated_at DESC
-    LIMIT 1
-  `, [link.user_id])
-
-  res.json({
+  const slipId = await createDueSlip({
+    userId: link.user_id,
+    token,
     person: link.person_name,
     month: link.due_month,
-    items: items.map(mapDue),
-    total: items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
-    payment: ownerRows[0] || null
+    amount: body.total,
+    file: req.file
   })
+  await db.query(`
+    UPDATE dues
+    SET status='pending', due_slip_id=?, slip_name=?, slip_type=?, slip_uploaded_at=NOW()
+    WHERE user_id=? AND person_name=? AND due_month=? AND status <> 'paid'
+  `, [slipId, req.file.originalname, req.file.mimetype, link.user_id, link.person_name, link.due_month])
+
+  const fresh = await publicPaymentPayload(token)
+  res.json({ ok: true, ...fresh.body })
 })
 
 // ── SCAN ──────────────────────────────────────────────────────

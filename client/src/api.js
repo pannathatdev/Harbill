@@ -176,6 +176,31 @@ export const api = {
   updateDue: (id, data) => patch(`/dues/${id}`, data),
   createDuePayLink: (data) => post("/dues/pay-link", data),
   getPublicPayment: (token) => req(`/pay/${token}`, { skipCache: true }),
+  uploadPublicPaymentSlip: (token, file) => {
+    const form = new FormData()
+    form.append("slip", file)
+    return fetch(`${BASE}/pay/${token}/slip`, {
+      method: "POST",
+      body: form
+    }).then(async r => {
+      const data = await r.json()
+      if (!r.ok) throw new Error(data?.error || "Upload failed")
+      return data
+    })
+  },
+  getDueSlipBlob: (id) => fetch(`${BASE}/dues/${id}/slip`, {
+    headers: { "Authorization": `Bearer ${getToken()}` }
+  }).then(async r => {
+    if (!r.ok) {
+      let message = "Slip not found"
+      try {
+        const data = await r.json()
+        message = data?.error || message
+      } catch {}
+      throw new Error(message)
+    }
+    return r.blob()
+  }),
   attachDueSlip: (id, file) => {
     const form = new FormData()
     form.append("slip", file)
