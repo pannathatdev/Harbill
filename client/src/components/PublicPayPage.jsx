@@ -56,6 +56,7 @@ export default function PublicPayPage({ darkMode = true }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [qrUrl, setQrUrl] = useState("")
+  const [itemQrUrls, setItemQrUrls] = useState({})
   const [qrLoading, setQrLoading] = useState(false)
   const [slipFile, setSlipFile] = useState(null)
   const [slipPreview, setSlipPreview] = useState("")
@@ -83,9 +84,11 @@ export default function PublicPayPage({ darkMode = true }) {
     let cancelled = false
 
     async function buildQr() {
-      const payload = buildPromptPayPayload(data?.payment?.promptpay, Number(data?.total || 0))
+      const promptpay = data?.payment?.promptpay
+      const payload = buildPromptPayPayload(promptpay, Number(data?.total || 0))
       if (!payload) {
         setQrUrl("")
+        setItemQrUrls({})
         setQrLoading(false)
         return
       }
@@ -93,12 +96,22 @@ export default function PublicPayPage({ darkMode = true }) {
       setQrLoading(true)
       try {
         const QRCode = await import("qrcode")
-        const image = await QRCode.default.toDataURL(payload, {
+        const options = {
           errorCorrectionLevel: "H",
           margin: 3,
           width: 360,
-        })
-        if (!cancelled) setQrUrl(image)
+        }
+        const image = await QRCode.default.toDataURL(payload, options)
+        const itemImages = {}
+        for (const item of data?.items || []) {
+          const itemPayload = buildPromptPayPayload(promptpay, Number(item.amount || 0))
+          if (!itemPayload) continue
+          itemImages[item.id] = await QRCode.default.toDataURL(itemPayload, options)
+        }
+        if (!cancelled) {
+          setQrUrl(image)
+          setItemQrUrls(itemImages)
+        }
       } finally {
         if (!cancelled) setQrLoading(false)
       }
@@ -106,7 +119,7 @@ export default function PublicPayPage({ darkMode = true }) {
 
     buildQr()
     return () => { cancelled = true }
-  }, [data?.payment?.promptpay, data?.total])
+  }, [data?.payment?.promptpay, data?.total, data?.items])
 
   useEffect(() => {
     if (!slipFile) {
@@ -122,16 +135,17 @@ export default function PublicPayPage({ darkMode = true }) {
     return () => URL.revokeObjectURL(url)
   }, [slipFile])
 
-  function fileSafeName() {
+  function fileSafeName(label = "payment") {
     const name = String(data?.person || "payment").replace(/[^\wก-๙-]+/g, "-")
-    return `harbill-qr-${name}-${data?.month || "due"}.png`
+    const suffix = String(label || "payment").replace(/[^\wก-๙-]+/g, "-")
+    return `harbill-qr-${name}-${data?.month || "due"}-${suffix}.png`
   }
 
-  async function saveQrImage() {
-    if (!qrUrl) return
+  async function saveQrImage(image = qrUrl, label = "total") {
+    if (!image) return
     const link = document.createElement("a")
-    link.href = qrUrl
-    link.download = fileSafeName()
+    link.href = image
+    link.download = fileSafeName(label)
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -223,15 +237,36 @@ export default function PublicPayPage({ darkMode = true }) {
                 {data.items.length === 0 ? (
                   <p className="p-4 text-center text-sm text-emerald-700">ไม่มีรายการค้างชำระแล้ว</p>
                 ) : data.items.map(item => (
-                  <div key={item.id} className="grid gap-3 p-4 sm:grid-cols-[1fr_auto] sm:items-start">
+                  <div key={item.id} className="grid gap-3 p-4 md:grid-cols-[1fr_180px] md:items-start">
                     <div className="min-w-0">
                       <p className="text-sm font-bold">{item.title}</p>
                       {item.note && <p className={`mt-1 text-xs ${muted}`}>{item.note}</p>}
                       {item.slipName && <p className="mt-1 text-xs font-semibold text-amber-500">ส่งสลิปแล้ว รอตรวจ</p>}
+                      <p className="mt-2 text-lg font-black">฿{formatMoney(item.amount)}</p>
                     </div>
-                    <div className="flex flex-wrap items-center justify-between gap-2 sm:flex-col sm:items-end">
-                      <p className="text-sm font-black">฿{formatMoney(item.amount)}</p>
-                      <label className={`inline-flex cursor-pointer items-center justify-center rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${item.slipName ? "border-amber-300 bg-amber-50 text-amber-700" : button}`}>
+                    <div className="space-y-2">
+                      <div className="rounded-2xl bg-white p-2">
+                        {qrLoading ? (
+                          <div className="grid aspect-square place-items-center">
+                            <span className="h-5 w-5 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+                          </div>
+                        ) : itemQrUrls[item.id] ? (
+                          <img src={itemQrUrls[item.id]} alt={`QR ${item.title}`} className="aspect-square w-full rounded-xl" />
+                        ) : (
+                          <div className="grid aspect-square place-items-center text-center text-xs font-semibold text-slate-400">
+                            ไม่มี QR
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => saveQrImage(itemQrUrls[item.id], item.title)}
+                        disabled={!itemQrUrls[item.id] || qrLoading}
+                        className={`w-full rounded-xl px-3 py-2 text-xs font-bold transition-colors ${primaryButton}`}
+                      >
+                        บันทึก QR รายการนี้
+                      </button>
+                      <label className={`flex cursor-pointer items-center justify-center rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${item.slipName ? "border-amber-300 bg-amber-50 text-amber-700" : button}`}>
                         {uploadingItemId === item.id ? "กำลังส่ง..." : item.slipName ? "ส่งใหม่" : "ส่งสลิปนี้"}
                         <input
                           type="file"
@@ -265,14 +300,14 @@ export default function PublicPayPage({ darkMode = true }) {
                     )}
                   </div>
                   <div className="text-center sm:text-left">
-                    <p className={`text-xs font-bold uppercase ${payMuted}`}>PromptPay QR</p>
+                    <p className={`text-xs font-bold uppercase ${payMuted}`}>PromptPay QR รวมทั้งหมด</p>
                     <p className={`mt-1 text-2xl font-black ${payText}`}>฿{formatMoney(data.total)}</p>
                     <p className={`mt-2 text-sm font-bold ${payText}`}>{data.payment.promptpay}</p>
-                    <p className={`mt-1 text-xs leading-5 ${payMuted}`}>สแกน QR นี้เพื่อโอนยอดตามรายการค้างทั้งหมด แล้วส่งสลิปให้เจ้าของยอดตรวจสอบ</p>
+                    <p className={`mt-1 text-xs leading-5 ${payMuted}`}>ใช้ QR นี้เมื่อจ่ายรวมทุกยอดในครั้งเดียว ถ้าจ่ายแยก ให้ใช้ QR ใต้รายการนั้นแทน</p>
                     <div className="mt-4 grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        onClick={saveQrImage}
+                        onClick={() => saveQrImage(qrUrl, "total")}
                         disabled={!qrUrl || qrLoading}
                         className={`rounded-xl px-4 py-3 text-sm font-bold transition-colors ${primaryButton}`}
                       >
