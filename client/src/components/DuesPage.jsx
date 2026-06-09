@@ -26,6 +26,8 @@ const copy = {
     byPerson: "รายการแยกตามคน",
     sendLink: "ส่งลิงก์ชำระ",
     copyText: "คัดลอกยอดค้าง",
+    copyPersonText: "คัดลอกยอดคนนี้",
+    copyPaymentMessage: "คัดลอกข้อความพร้อมลิงก์",
     markPaid: "รับเงินแล้ว",
     markUnpaid: "กลับเป็นค้าง",
     uploadSlip: "แนบสลิป",
@@ -63,6 +65,8 @@ const copy = {
     byPerson: "By person",
     sendLink: "Payment link",
     copyText: "Copy dues",
+    copyPersonText: "Copy this person",
+    copyPaymentMessage: "Copy message with link",
     markPaid: "Mark paid",
     markUnpaid: "Mark unpaid",
     uploadSlip: "Attach slip",
@@ -279,7 +283,7 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
     }
   }
 
-  function buildDuesText(person = null) {
+  function buildDuesText(person = null, paymentUrl = "") {
     const rows = filtered.filter(item => item.status !== "paid" && (!person || item.person === person))
     const groupedRows = rows.reduce((map, item) => {
       if (!map[item.person]) map[item.person] = []
@@ -289,8 +293,22 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
 
     return Object.entries(groupedRows).map(([name, dues]) => {
       const total = dues.reduce((sum, item) => sum + item.amount, 0)
-      const lines = dues.map(item => `- ${item.title}: ฿${formatMoney(item.amount)}${item.note ? ` (${item.note})` : ""}`).join("\n")
-      return `${name}\n${t.outstanding}: ฿${formatMoney(total)}\n${lines}`
+      const lines = dues.map((item, index) => {
+        const note = item.note ? `\n   หมายเหตุ: ${item.note}` : ""
+        const statusText = item.status === "pending" ? " (ส่งสลิปแล้ว รอตรวจ)" : ""
+        return `${index + 1}. ${item.title}${statusText}\n   ยอดชำระ: ฿${formatMoney(item.amount)}${note}`
+      }).join("\n")
+      const paymentLine = paymentUrl ? `\n\nลิงก์ชำระ/ส่งสลิป:\n${paymentUrl}` : ""
+      return [
+        "Harbill - รายการยอดค้าง",
+        `ผู้ชำระ: ${name}`,
+        `เดือน: ${month}`,
+        "",
+        "รายการที่ต้องชำระ:",
+        lines,
+        "",
+        `รวมยอดชำระ: ฿${formatMoney(total)}${paymentLine}`,
+      ].join("\n")
     }).join("\n\n")
   }
 
@@ -306,8 +324,9 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
       person,
       total,
       url: `${window.location.origin}/pay/${fallbackToken}?name=${encodeURIComponent(person)}`,
-      text: buildDuesText(person),
+      text: "",
     }
+    fallback.text = buildDuesText(person, fallback.url)
 
     if (!usingDatabase) {
       setLinkModal(fallback)
@@ -315,7 +334,7 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
     }
 
     api.createDuePayLink({ person, month })
-      .then(result => setLinkModal({ ...fallback, url: result.url }))
+      .then(result => setLinkModal({ ...fallback, url: result.url, text: buildDuesText(person, result.url) }))
       .catch(() => setLinkModal(fallback))
   }
 
@@ -470,14 +489,24 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
                     <p className="text-base font-black">{person}</p>
                     <p className={`mt-1 text-xs ${muted}`}>{t.outstanding} ฿{formatMoney(outstanding)}</p>
                   </div>
-                  <button
-                    onClick={() => openPaymentLink(person)}
-                    title={t.sendLink}
-                    aria-label={t.sendLink}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-700"
-                  >
-                    <LinkIcon />
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => copyToClipboard(buildDuesText(person))}
+                      title={t.copyPersonText}
+                      aria-label={t.copyPersonText}
+                      className={iconButton}
+                    >
+                      <CopyIcon />
+                    </button>
+                    <button
+                      onClick={() => openPaymentLink(person)}
+                      title={t.sendLink}
+                      aria-label={t.sendLink}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-700"
+                    >
+                      <LinkIcon />
+                    </button>
+                  </div>
                 </div>
                 <div className={`divide-y ${darkMode ? "divide-slate-800" : "divide-slate-100"}`}>
                   {personItems.map(item => (
@@ -543,7 +572,10 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
             <div className={`mt-4 rounded-xl border p-3 text-sm break-all ${softPanel}`}>{linkModal.url}</div>
             <pre className={`mt-3 max-h-44 overflow-auto rounded-xl border p-3 text-xs leading-5 whitespace-pre-wrap ${softPanel}`}>{linkModal.text || t.noItems}</pre>
             <p className={`mt-3 text-xs leading-5 ${muted}`}>{t.linkHelp}</p>
-            <button onClick={() => copyToClipboard(linkModal.url, t.copied)} className="mt-4 w-full rounded-xl bg-sky-600 px-4 py-3 text-sm font-bold text-white hover:bg-sky-500">
+            <button onClick={() => copyToClipboard(linkModal.text || linkModal.url, t.copied)} className="mt-4 w-full rounded-xl bg-sky-600 px-4 py-3 text-sm font-bold text-white hover:bg-sky-500">
+              {t.copyPaymentMessage}
+            </button>
+            <button onClick={() => copyToClipboard(linkModal.url, t.copied)} className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm font-bold ${outlineButton}`}>
               {t.copyLink}
             </button>
           </div>
