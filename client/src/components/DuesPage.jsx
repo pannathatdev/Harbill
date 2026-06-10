@@ -201,6 +201,51 @@ function PlusIcon() {
   )
 }
 
+function TelegramIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+      <path d="M20.6 4.5 3.6 11.1c-1.1.4-1.1 1.1-.2 1.4l4.3 1.3 1.7 5.1c.2.6.4.8.8.8.4 0 .6-.2.9-.5l2.1-2 4.4 3.2c.8.4 1.3.2 1.5-.8l2.7-12.8c.3-1.2-.4-1.7-1.2-1.3Zm-11.5 8.9 8.5-5.4c.4-.2.7-.1.4.2l-7.3 6.6-.3 3.1-1.3-4.5Z" />
+    </svg>
+  )
+}
+
+function FacebookIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+      <path d="M14 8.5V6.8c0-.8.3-1.3 1.4-1.3h1.7V2.7c-.8-.1-1.6-.2-2.4-.2-2.5 0-4.2 1.5-4.2 4.2v1.8H7.8v3.2h2.7v8.8H14v-8.8h2.7l.4-3.2H14Z" />
+    </svg>
+  )
+}
+
+function InstagramIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="4" width="16" height="16" rx="5" />
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M17.2 6.8h.01" />
+    </svg>
+  )
+}
+
+function slipCheckMessage(status, note, lang = "th") {
+  const th = {
+    amount_matched: "อ่านสลิปแล้วพบยอดตรง รอเจ้าของตรวจรับเงิน",
+    amount_mismatch: "อ่านยอดจากสลิปได้ แต่ยอดไม่ตรงกับรายการ",
+    duplicate: "พบว่าสลิปนี้เคยถูกอัปโหลดแล้ว",
+    reader_unavailable: "อุปกรณ์นี้ยังไม่รองรับตัวอ่าน QR ฟรี รอตรวจด้วยตนเอง",
+    needs_review: "อ่านอัตโนมัติไม่ได้ รอตรวจด้วยตนเอง",
+  }
+  const en = {
+    amount_matched: "Amount matched. Waiting for owner review.",
+    amount_mismatch: "Slip amount was read, but it does not match this item.",
+    duplicate: "This slip file was uploaded before.",
+    reader_unavailable: "Free QR reader is unavailable on this device. Manual review needed.",
+    needs_review: "Automatic reading was not enough. Manual review needed.",
+  }
+  const table = lang === "en" ? en : th
+  return table[status] || note || table.needs_review
+}
+
 function findAmountInText(text, expectedAmount) {
   const expected = Number(expectedAmount || 0)
   const numbers = String(text || "")
@@ -790,7 +835,7 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
                                       ? "text-rose-300"
                                       : "text-amber-300"
                                   }`}>
-                                    {t.freeSlipCheck}: {item.slipCheckNote || item.slipCheckStatus}
+                                    {t.freeSlipCheck}: {slipCheckMessage(item.slipCheckStatus, item.slipCheckNote, lang)}
                                   </p>
                                 )}
                               </div>
@@ -870,15 +915,30 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
             <button onClick={() => copyToClipboard(linkModal.url, t.copied)} className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm font-bold ${outlineButton}`}>
               {t.copyLink}
             </button>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              <button onClick={() => sharePaymentLink("telegram")} className={`rounded-xl border px-3 py-2 text-xs font-bold ${outlineButton}`}>
-                {t.shareTelegram}
+            <div className="mt-3 flex justify-center gap-2">
+              <button
+                onClick={() => sharePaymentLink("telegram")}
+                title={t.shareTelegram}
+                aria-label={t.shareTelegram}
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-xl border text-sky-400 ${outlineButton}`}
+              >
+                <TelegramIcon />
               </button>
-              <button onClick={() => sharePaymentLink("facebook")} className={`rounded-xl border px-3 py-2 text-xs font-bold ${outlineButton}`}>
-                {t.shareFacebook}
+              <button
+                onClick={() => sharePaymentLink("facebook")}
+                title={t.shareFacebook}
+                aria-label={t.shareFacebook}
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-xl border text-blue-400 ${outlineButton}`}
+              >
+                <FacebookIcon />
               </button>
-              <button onClick={() => sharePaymentLink("instagram")} className={`rounded-xl border px-3 py-2 text-xs font-bold ${outlineButton}`}>
-                {t.shareInstagram}
+              <button
+                onClick={() => sharePaymentLink("instagram")}
+                title={t.shareInstagram}
+                aria-label={t.shareInstagram}
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-xl border text-pink-400 ${outlineButton}`}
+              >
+                <InstagramIcon />
               </button>
             </div>
           </div>
