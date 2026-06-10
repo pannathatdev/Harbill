@@ -176,9 +176,10 @@ export const api = {
   updateDue: (id, data) => patch(`/dues/${id}`, data),
   createDuePayLink: (data) => post("/dues/pay-link", data),
   getPublicPayment: (token) => req(`/pay/${token}`, { skipCache: true }),
-  uploadPublicPaymentSlip: (token, file) => {
+  uploadPublicPaymentSlip: (token, file, slipCheck = null) => {
     const form = new FormData()
     form.append("slip", file)
+    if (slipCheck) form.append("slipCheck", JSON.stringify(slipCheck))
     return fetch(`${BASE}/pay/${token}/slip`, {
       method: "POST",
       body: form
@@ -188,9 +189,10 @@ export const api = {
       return data
     })
   },
-  uploadPublicDueItemSlip: (token, id, file) => {
+  uploadPublicDueItemSlip: (token, id, file, slipCheck = null) => {
     const form = new FormData()
     form.append("slip", file)
+    if (slipCheck) form.append("slipCheck", JSON.stringify(slipCheck))
     return fetch(`${BASE}/pay/${token}/items/${id}/slip`, {
       method: "POST",
       body: form
@@ -213,9 +215,10 @@ export const api = {
     }
     return r.blob()
   }),
-  attachDueSlip: (id, file) => {
+  attachDueSlip: (id, file, slipCheck = null) => {
     const form = new FormData()
     form.append("slip", file)
+    if (slipCheck) form.append("slipCheck", JSON.stringify(slipCheck))
     return fetch(`${BASE}/dues/${id}/slip`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${getToken()}` },

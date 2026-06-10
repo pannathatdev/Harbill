@@ -32,6 +32,12 @@ const copy = {
     markUnpaid: "กลับเป็นค้าง",
     uploadSlip: "แนบสลิป",
     viewSlip: "ดูสลิป",
+    addDebtForPerson: "เพิ่มหนี้ให้คนนี้",
+    quickAddTitle: "เพิ่มรายการหนี้",
+    shareTelegram: "Telegram",
+    shareFacebook: "Facebook",
+    shareInstagram: "Instagram",
+    freeSlipCheck: "ผลอ่านสลิปฟรี",
     noItems: "ยังไม่มีรายการในเดือนนี้",
     emptyHint: "เพิ่มชื่อ รายการ และยอดเงินด้านบน เพื่อเริ่มติดตามยอดค้าง",
     copied: "คัดลอกข้อความแล้ว",
@@ -71,6 +77,12 @@ const copy = {
     markUnpaid: "Mark unpaid",
     uploadSlip: "Attach slip",
     viewSlip: "View slip",
+    addDebtForPerson: "Add debt",
+    quickAddTitle: "Add due item",
+    shareTelegram: "Telegram",
+    shareFacebook: "Facebook",
+    shareInstagram: "Instagram",
+    freeSlipCheck: "Free slip read",
     noItems: "No items for this month",
     emptyHint: "Add a person, item, and amount above to start tracking dues.",
     copied: "Copied",
@@ -180,6 +192,53 @@ function ImageIcon() {
   )
 }
 
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </svg>
+  )
+}
+
+function findAmountInText(text, expectedAmount) {
+  const expected = Number(expectedAmount || 0)
+  const numbers = String(text || "")
+    .match(/\d+(?:[,.]\d{1,2})?/g)
+    ?.map(value => Number(value.replace(/,/g, "")))
+    .filter(value => Number.isFinite(value)) || []
+  return numbers.find(value => Math.abs(value - expected) < 0.01) ?? null
+}
+
+async function analyzeSlipFile(file, expectedAmount) {
+  const result = {
+    expectedAmount: Number(expectedAmount || 0),
+    barcodeSupported: "BarcodeDetector" in window,
+    barcodeText: "",
+    amountFound: null,
+    amountMatches: false,
+  }
+
+  if (!result.barcodeSupported || !String(file?.type || "").startsWith("image/")) return result
+
+  try {
+    const detector = new window.BarcodeDetector({ formats: ["qr_code"] })
+    const bitmap = await createImageBitmap(file)
+    const codes = await detector.detect(bitmap)
+    bitmap.close?.()
+    const text = codes[0]?.rawValue || ""
+    const amountFound = findAmountInText(text, expectedAmount)
+    return {
+      ...result,
+      barcodeText: text,
+      amountFound,
+      amountMatches: amountFound !== null && Math.abs(amountFound - Number(expectedAmount || 0)) < 0.01,
+    }
+  } catch {
+    return result
+  }
+}
+
 function readStoredItems() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -199,6 +258,7 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
   const [notice, setNotice] = useState("")
   const [linkModal, setLinkModal] = useState(null)
   const [slipModal, setSlipModal] = useState(null)
+  const [quickAdd, setQuickAdd] = useState(null)
   const [loading, setLoading] = useState(true)
   const [usingDatabase, setUsingDatabase] = useState(false)
   const [expandedPeople, setExpandedPeople] = useState({})
@@ -355,6 +415,35 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
     setForm({ person: "", title: "", amount: "", note: "" })
   }
 
+  function saveQuickAdd() {
+    const person = quickAdd?.person?.trim()
+    const title = quickAdd?.title?.trim()
+    const amount = parseFloat(quickAdd?.amount)
+    const note = quickAdd?.note?.trim() || ""
+    if (!person || !title || Number.isNaN(amount)) return
+
+    const draft = {
+      id: window.crypto?.randomUUID?.() || String(Date.now()),
+      person,
+      title,
+      amount,
+      month,
+      status: "unpaid",
+      note,
+      createdAt: new Date().toISOString(),
+    }
+
+    if (usingDatabase) {
+      api.addDue(draft)
+        .then(saved => setItems(prev => [saved, ...prev]))
+        .catch(() => setItems(prev => [draft, ...prev]))
+    } else {
+      setItems(prev => [draft, ...prev])
+    }
+    setQuickAdd(null)
+    showNotice("เพิ่มรายการแล้ว")
+  }
+
   function setItemStatus(id, nextStatus) {
     const optimistic = item => item.id === id ? { ...item, status: nextStatus, paidAt: nextStatus === "paid" ? new Date().toISOString() : null } : item
     setItems(prev => prev.map(optimistic))
@@ -420,9 +509,35 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
       .catch(() => setLinkModal(fallback))
   }
 
-  function attachSlip(id, file) {
+  function openShare(url) {
+    window.open(url, "_blank", "noopener,noreferrer,width=720,height=720")
+  }
+
+  async function sharePaymentLink(channel) {
+    if (!linkModal) return
+    const text = linkModal.text || linkModal.url
+    const url = linkModal.url
+    if (channel === "telegram") {
+      openShare(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`)
+      return
+    }
+    if (channel === "facebook") {
+      openShare(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`)
+      return
+    }
+    if (navigator.share) {
+      await navigator.share({ title: "Harbill", text, url })
+      return
+    }
+    await copyToClipboard(text, "คัดลอกข้อความแล้ว เปิด Instagram เพื่อส่งต่อได้เลย")
+    openShare("https://www.instagram.com/")
+  }
+
+  async function attachSlip(id, file) {
     if (!file) return
     const slipUrl = URL.createObjectURL(file)
+    const target = items.find(item => item.id === id)
+    const slipCheck = await analyzeSlipFile(file, target?.amount)
     const applySlip = saved => setItems(prev => prev.map(item => item.id === id ? {
       ...item,
       ...saved,
@@ -433,7 +548,7 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
       note: item.note || t.slipAttached,
     } : item))
     if (usingDatabase) {
-      api.attachDueSlip(id, file)
+      api.attachDueSlip(id, file, slipCheck)
         .then(saved => applySlip(saved))
         .catch(() => applySlip({}))
     } else {
@@ -634,6 +749,14 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
                                 {expanded ? "ซ่อนรายการ" : `ดูรายการ (${personItems.length})`}
                               </button>
                               <button
+                                onClick={() => setQuickAdd({ person, title: "", amount: "", note: "" })}
+                                title={t.addDebtForPerson}
+                                aria-label={t.addDebtForPerson}
+                                className={iconButton}
+                              >
+                                <PlusIcon />
+                              </button>
+                              <button
                                 onClick={() => copyToClipboard(buildDuesText(person))}
                                 title={t.copyPersonText}
                                 aria-label={t.copyPersonText}
@@ -659,6 +782,17 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
                               <div>
                                 <p className="text-sm font-semibold">{item.title}</p>
                                 {(item.note || item.slipName) && <p className={`mt-1 text-xs ${muted}`}>{item.slipName || item.note}</p>}
+                                {item.slipCheckStatus && (
+                                  <p className={`mt-1 text-xs font-bold ${
+                                    item.slipCheckStatus === "amount_matched"
+                                      ? "text-emerald-300"
+                                      : item.slipCheckStatus === "duplicate" || item.slipCheckStatus === "amount_mismatch"
+                                      ? "text-rose-300"
+                                      : "text-amber-300"
+                                  }`}>
+                                    {t.freeSlipCheck}: {item.slipCheckNote || item.slipCheckStatus}
+                                  </p>
+                                )}
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className={`text-sm font-black ${item.status === "paid" ? currentTone.amount : ""}`}>฿{formatMoney(item.amount)}</span>
@@ -735,6 +869,56 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
             </button>
             <button onClick={() => copyToClipboard(linkModal.url, t.copied)} className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm font-bold ${outlineButton}`}>
               {t.copyLink}
+            </button>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <button onClick={() => sharePaymentLink("telegram")} className={`rounded-xl border px-3 py-2 text-xs font-bold ${outlineButton}`}>
+                {t.shareTelegram}
+              </button>
+              <button onClick={() => sharePaymentLink("facebook")} className={`rounded-xl border px-3 py-2 text-xs font-bold ${outlineButton}`}>
+                {t.shareFacebook}
+              </button>
+              <button onClick={() => sharePaymentLink("instagram")} className={`rounded-xl border px-3 py-2 text-xs font-bold ${outlineButton}`}>
+                {t.shareInstagram}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {quickAdd && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 px-4">
+          <div className={`w-full max-w-lg rounded-2xl border p-5 shadow-2xl ${panel}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className={`text-xs font-bold uppercase ${muted}`}>{t.quickAddTitle}</p>
+                <h3 className="mt-1 text-xl font-black">{quickAdd.person}</h3>
+              </div>
+              <button onClick={() => setQuickAdd(null)} className={`rounded-xl border px-3 py-2 text-xs font-bold ${outlineButton}`}>{t.close}</button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <input
+                className={`rounded-xl border px-3 py-2 text-sm outline-none ${input}`}
+                placeholder={t.item}
+                value={quickAdd.title}
+                onChange={e => setQuickAdd(value => ({ ...value, title: e.target.value }))}
+              />
+              <input
+                className={`rounded-xl border px-3 py-2 text-sm outline-none ${input}`}
+                placeholder={t.amount}
+                type="number"
+                value={quickAdd.amount}
+                onChange={e => setQuickAdd(value => ({ ...value, amount: e.target.value }))}
+              />
+              <input
+                className={`rounded-xl border px-3 py-2 text-sm outline-none ${input}`}
+                placeholder={t.note}
+                value={quickAdd.note}
+                onChange={e => setQuickAdd(value => ({ ...value, note: e.target.value }))}
+                onKeyDown={e => e.key === "Enter" && saveQuickAdd()}
+              />
+            </div>
+            <button onClick={saveQuickAdd} className="mt-4 w-full rounded-xl bg-sky-600 px-4 py-3 text-sm font-bold text-white hover:bg-sky-500">
+              {t.save}
             </button>
           </div>
         </div>

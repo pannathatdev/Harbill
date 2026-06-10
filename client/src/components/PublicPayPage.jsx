@@ -50,6 +50,44 @@ function buildPromptPayPayload(promptpay, amount) {
   return `${withoutCrc}${crc16Ccitt(withoutCrc)}`
 }
 
+function findAmountInText(text, expectedAmount) {
+  const expected = Number(expectedAmount || 0)
+  const numbers = String(text || "")
+    .match(/\d+(?:[,.]\d{1,2})?/g)
+    ?.map(value => Number(value.replace(/,/g, "")))
+    .filter(value => Number.isFinite(value)) || []
+  return numbers.find(value => Math.abs(value - expected) < 0.01) ?? null
+}
+
+async function analyzeSlipFile(file, expectedAmount) {
+  const result = {
+    expectedAmount: Number(expectedAmount || 0),
+    barcodeSupported: "BarcodeDetector" in window,
+    barcodeText: "",
+    amountFound: null,
+    amountMatches: false,
+  }
+
+  if (!result.barcodeSupported || !String(file?.type || "").startsWith("image/")) return result
+
+  try {
+    const detector = new window.BarcodeDetector({ formats: ["qr_code"] })
+    const bitmap = await createImageBitmap(file)
+    const codes = await detector.detect(bitmap)
+    bitmap.close?.()
+    const text = codes[0]?.rawValue || ""
+    const amountFound = findAmountInText(text, expectedAmount)
+    return {
+      ...result,
+      barcodeText: text,
+      amountFound,
+      amountMatches: amountFound !== null && Math.abs(amountFound - Number(expectedAmount || 0)) < 0.01,
+    }
+  } catch {
+    return result
+  }
+}
+
 export default function PublicPayPage({ darkMode = true }) {
   const { token } = useParams()
   const [data, setData] = useState(null)
@@ -169,10 +207,11 @@ export default function PublicPayPage({ darkMode = true }) {
     setUploadingSlip(true)
     setUploadMessage("")
     try {
-      const result = await api.uploadPublicPaymentSlip(token, slipFile)
+      const slipCheck = await analyzeSlipFile(slipFile, data?.total)
+      const result = await api.uploadPublicPaymentSlip(token, slipFile, slipCheck)
       setData(result)
       setSlipFile(null)
-      setUploadMessage("ส่งสลิปแล้ว รอเจ้าของยอดตรวจรับเงิน")
+      setUploadMessage(slipCheck.amountMatches ? "อ่านสลิปแล้วพบยอดตรง รอเจ้าของยอดตรวจรับเงิน" : "ส่งสลิปแล้ว รอเจ้าของยอดตรวจรับเงิน")
     } catch (err) {
       setUploadMessage(err.message || "ส่งสลิปไม่สำเร็จ")
     } finally {
@@ -185,9 +224,10 @@ export default function PublicPayPage({ darkMode = true }) {
     setUploadingItemId(item.id)
     setUploadMessage("")
     try {
-      const result = await api.uploadPublicDueItemSlip(token, item.id, file)
+      const slipCheck = await analyzeSlipFile(file, item.amount)
+      const result = await api.uploadPublicDueItemSlip(token, item.id, file, slipCheck)
       setData(result)
-      setUploadMessage(`ส่งสลิปของ "${item.title}" แล้ว รอเจ้าของยอดตรวจ`)
+      setUploadMessage(slipCheck.amountMatches ? `อ่านสลิปของ "${item.title}" แล้วพบยอดตรง` : `ส่งสลิปของ "${item.title}" แล้ว รอเจ้าของยอดตรวจ`)
     } catch (err) {
       setUploadMessage(err.message || "ส่งสลิปไม่สำเร็จ")
     } finally {

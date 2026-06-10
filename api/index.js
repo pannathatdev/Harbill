@@ -182,9 +182,14 @@ async function ensureDuesSchema() {
       file_name VARCHAR(255) NOT NULL,
       file_type VARCHAR(128) NOT NULL,
       file_data MEDIUMBLOB NOT NULL,
+      file_hash CHAR(64) NULL,
+      check_status VARCHAR(32) NOT NULL DEFAULT 'needs_review',
+      check_note TEXT NULL,
+      check_payload JSON NULL,
       uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_due_slips_user_month (user_id, due_month),
       INDEX idx_due_slips_token (payment_token),
+      INDEX idx_due_slips_hash (user_id, file_hash),
       CONSTRAINT fk_due_slips_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `)
@@ -211,6 +216,27 @@ async function ensureDuesSchema() {
   `)
   if (!dueColumns[0]) {
     await db.query("ALTER TABLE dues ADD COLUMN due_slip_id INT NULL AFTER note")
+  }
+
+  const [slipColumns] = await db.query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'due_slips'
+      AND COLUMN_NAME IN ('file_hash', 'check_status', 'check_note', 'check_payload')
+  `)
+  const existingSlipColumns = new Set(slipColumns.map(column => column.COLUMN_NAME))
+  if (!existingSlipColumns.has("file_hash")) {
+    await db.query("ALTER TABLE due_slips ADD COLUMN file_hash CHAR(64) NULL AFTER file_data")
+  }
+  if (!existingSlipColumns.has("check_status")) {
+    await db.query("ALTER TABLE due_slips ADD COLUMN check_status VARCHAR(32) NOT NULL DEFAULT 'needs_review' AFTER file_hash")
+  }
+  if (!existingSlipColumns.has("check_note")) {
+    await db.query("ALTER TABLE due_slips ADD COLUMN check_note TEXT NULL AFTER check_status")
+  }
+  if (!existingSlipColumns.has("check_payload")) {
+    await db.query("ALTER TABLE due_slips ADD COLUMN check_payload JSON NULL AFTER check_note")
   }
 
   duesSchemaReady = true
@@ -1190,6 +1216,8 @@ function mapDue(row) {
     slipName: row.slip_name || "",
     slipType: row.slip_type || "",
     slipUrl: hasStoredSlip ? `${API_BASE_URL}/dues/${row.id}/slip` : "",
+    slipCheckStatus: row.check_status || row.slip_check_status || "",
+    slipCheckNote: row.check_note || row.slip_check_note || "",
     paidAt: row.paid_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -1202,10 +1230,65 @@ function safeDownloadName(name) {
     .slice(0, 180) || "slip"
 }
 
-async function createDueSlip({ userId, token = null, person, month, amount, file }) {
+function parseSlipCheckBody(body) {
+  if (!body?.slipCheck) return null
+  try {
+    return typeof body.slipCheck === "string" ? JSON.parse(body.slipCheck) : body.slipCheck
+  } catch {
+    return null
+  }
+}
+
+function normalizeSlipCheck(input, fileHash, duplicate) {
+  const raw = input && typeof input === "object" ? input : {}
+  const amountMatches = raw.amountMatches === true
+  const amountFound = raw.amountFound !== undefined && raw.amountFound !== null ? Number(raw.amountFound) : null
+  const barcodeText = String(raw.barcodeText || "").slice(0, 2000)
+  const barcodeSupported = raw.barcodeSupported !== false
+
+  if (duplicate) {
+    return {
+      status: "duplicate",
+      note: "พบสลิปไฟล์เดียวกันเคยถูกอัปโหลดแล้ว",
+      payload: { ...raw, fileHash, duplicate: true, barcodeText },
+    }
+  }
+
+  if (amountMatches) {
+    return {
+      status: "amount_matched",
+      note: "อ่านข้อมูลจากสลิปแล้วพบยอดตรงกับรายการ แต่ยังไม่ได้ตรวจเงินจริงกับธนาคาร",
+      payload: { ...raw, fileHash, barcodeText, amountFound },
+    }
+  }
+
+  if (amountFound !== null && !Number.isNaN(amountFound)) {
+    return {
+      status: "amount_mismatch",
+      note: "อ่านยอดจากสลิปได้ แต่ยอดไม่ตรงกับรายการ",
+      payload: { ...raw, fileHash, barcodeText, amountFound },
+    }
+  }
+
+  return {
+    status: barcodeSupported ? "needs_review" : "reader_unavailable",
+    note: barcodeSupported
+      ? "ยังอ่านยอดจากสลิปไม่ได้ เก็บสลิปไว้ให้เจ้าของตรวจ"
+      : "อุปกรณ์นี้ยังไม่รองรับตัวอ่าน QR ฟรี เก็บสลิปไว้ให้เจ้าของตรวจ",
+    payload: { ...raw, fileHash, barcodeText },
+  }
+}
+
+async function createDueSlip({ userId, token = null, person, month, amount, file, clientCheck = null }) {
+  const fileHash = crypto.createHash("sha256").update(file.buffer).digest("hex")
+  const [duplicates] = await db.query(
+    "SELECT id FROM due_slips WHERE user_id=? AND file_hash=? LIMIT 1",
+    [userId, fileHash]
+  )
+  const slipCheck = normalizeSlipCheck(clientCheck, fileHash, Boolean(duplicates[0]))
   const [result] = await db.query(`
-    INSERT INTO due_slips (user_id, payment_token, person_name, due_month, amount_paid, file_name, file_type, file_data)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO due_slips (user_id, payment_token, person_name, due_month, amount_paid, file_name, file_type, file_data, file_hash, check_status, check_note, check_payload)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     userId,
     token,
@@ -1214,7 +1297,11 @@ async function createDueSlip({ userId, token = null, person, month, amount, file
     Number.isFinite(Number(amount)) ? Number(amount) : null,
     file.originalname,
     file.mimetype || "application/octet-stream",
-    file.buffer
+    file.buffer,
+    fileHash,
+    slipCheck.status,
+    slipCheck.note,
+    JSON.stringify(slipCheck.payload)
   ])
   return result.insertId
 }
@@ -1228,10 +1315,13 @@ async function publicPaymentPayload(token) {
   }
 
   const [items] = await db.query(`
-    SELECT id, person_name, title, amount, due_month, status, note, due_slip_id, slip_name, slip_type, slip_uploaded_at, paid_at, created_at, updated_at
-    FROM dues
-    WHERE user_id=? AND person_name=? AND due_month=? AND status <> 'paid'
-    ORDER BY created_at DESC
+    SELECT d.id, d.person_name, d.title, d.amount, d.due_month, d.status, d.note, d.due_slip_id,
+      d.slip_name, d.slip_type, d.slip_uploaded_at, d.paid_at, d.created_at, d.updated_at,
+      s.check_status, s.check_note
+    FROM dues d
+    LEFT JOIN due_slips s ON s.id = d.due_slip_id
+    WHERE d.user_id=? AND d.person_name=? AND d.due_month=? AND d.status <> 'paid'
+    ORDER BY d.created_at DESC
   `, [link.user_id, link.person_name, link.due_month])
 
   const [ownerRows] = await db.query(`
@@ -1272,9 +1362,11 @@ app.get("/dues", requireAuth, async (req, res) => {
   }
 
   const [rows] = await db.query(`
-    SELECT * FROM dues
-    WHERE ${clauses.join(" AND ")}
-    ORDER BY due_month DESC, person_name ASC, created_at DESC
+    SELECT d.*, s.check_status, s.check_note
+    FROM dues d
+    LEFT JOIN due_slips s ON s.id = d.due_slip_id
+    WHERE ${clauses.map(clause => `d.${clause}`).join(" AND ")}
+    ORDER BY d.due_month DESC, d.person_name ASC, d.created_at DESC
   `, values)
   res.json(rows.map(mapDue))
 })
@@ -1362,14 +1454,20 @@ app.post("/dues/:id/slip", requireAuth, upload.single("slip"), async (req, res) 
     person: due.person_name,
     month: due.due_month,
     amount: due.amount,
-    file: req.file
+    file: req.file,
+    clientCheck: parseSlipCheckBody(req.body)
   })
   await db.query(`
     UPDATE dues
     SET status='pending', due_slip_id=?, slip_name=?, slip_type=?, slip_uploaded_at=NOW()
     WHERE id=? AND user_id=?
   `, [slipId, req.file.originalname, req.file.mimetype, req.params.id, req.user.id])
-  const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
+  const [rows] = await db.query(`
+    SELECT d.*, s.check_status, s.check_note
+    FROM dues d
+    LEFT JOIN due_slips s ON s.id = d.due_slip_id
+    WHERE d.id=? AND d.user_id=?
+  `, [req.params.id, req.user.id])
   res.json(mapDue(rows[0]))
 })
 
@@ -1444,7 +1542,8 @@ app.post("/pay/:token/slip", upload.single("slip"), async (req, res) => {
     person: link.person_name,
     month: link.due_month,
     amount: body.total,
-    file: req.file
+    file: req.file,
+    clientCheck: parseSlipCheckBody(req.body)
   })
   await db.query(`
     UPDATE dues
@@ -1478,7 +1577,8 @@ app.post("/pay/:token/items/:id/slip", upload.single("slip"), async (req, res) =
     person: link.person_name,
     month: link.due_month,
     amount: due.amount,
-    file: req.file
+    file: req.file,
+    clientCheck: parseSlipCheckBody(req.body)
   })
   await db.query(`
     UPDATE dues

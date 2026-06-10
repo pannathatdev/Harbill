@@ -114,9 +114,14 @@ CREATE TABLE IF NOT EXISTS due_slips (
   file_name VARCHAR(255) NOT NULL,
   file_type VARCHAR(128) NOT NULL,
   file_data MEDIUMBLOB NOT NULL,
+  file_hash CHAR(64) NULL,
+  check_status VARCHAR(32) NOT NULL DEFAULT 'needs_review',
+  check_note TEXT NULL,
+  check_payload JSON NULL,
   uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_due_slips_user_month (user_id, due_month),
   INDEX idx_due_slips_token (payment_token),
+  INDEX idx_due_slips_hash (user_id, file_hash),
   CONSTRAINT fk_due_slips_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
