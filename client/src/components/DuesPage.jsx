@@ -304,6 +304,7 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
   const [linkModal, setLinkModal] = useState(null)
   const [slipModal, setSlipModal] = useState(null)
   const [quickAdd, setQuickAdd] = useState(null)
+  const [friends, setFriends] = useState([])
   const [loading, setLoading] = useState(true)
   const [usingDatabase, setUsingDatabase] = useState(false)
   const [expandedPeople, setExpandedPeople] = useState({})
@@ -332,6 +333,18 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
       })
     return () => { cancelled = true }
   }, [month])
+
+  useEffect(() => {
+    let cancelled = false
+    api.getFriends()
+      .then(rows => {
+        if (!cancelled) setFriends(Array.isArray(rows) ? rows : [])
+      })
+      .catch(() => {
+        if (!cancelled) setFriends([])
+      })
+    return () => { cancelled = true }
+  }, [])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -406,6 +419,19 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
       rows: personSummaries.filter(item => item.state === "paid"),
     },
   ]), [personSummaries])
+
+  const friendOptions = useMemo(() => {
+    const names = new Set()
+    friends.forEach(friend => {
+      const name = String(friend?.name || "").trim()
+      if (name) names.add(name)
+    })
+    items.forEach(item => {
+      const name = String(item?.person || "").trim()
+      if (name) names.add(name)
+    })
+    return Array.from(names).sort((a, b) => a.localeCompare(b))
+  }, [friends, items])
 
   function showNotice(message) {
     setNotice(message)
@@ -672,7 +698,20 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
 
         <section className={`rounded-2xl border p-4 shadow-sm ${panel}`}>
           <div className="grid gap-3 md:grid-cols-[1fr_1fr_140px_1fr_auto]">
-            <input className={`rounded-xl border px-3 py-2 text-sm outline-none ${input}`} placeholder={t.person} value={form.person} onChange={e => setForm(v => ({ ...v, person: e.target.value }))} />
+            <div className="min-w-0">
+              <input
+                list="dues-friend-options"
+                className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${input}`}
+                placeholder={t.person}
+                value={form.person}
+                onChange={e => setForm(v => ({ ...v, person: e.target.value }))}
+              />
+              <datalist id="dues-friend-options">
+                {friendOptions.map(name => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </div>
             <input className={`rounded-xl border px-3 py-2 text-sm outline-none ${input}`} placeholder={t.item} value={form.title} onChange={e => setForm(v => ({ ...v, title: e.target.value }))} />
             <input className={`rounded-xl border px-3 py-2 text-sm outline-none ${input}`} placeholder={t.amount} type="number" value={form.amount} onChange={e => setForm(v => ({ ...v, amount: e.target.value }))} />
             <input className={`rounded-xl border px-3 py-2 text-sm outline-none ${input}`} placeholder={t.note} value={form.note} onChange={e => setForm(v => ({ ...v, note: e.target.value }))} onKeyDown={e => e.key === "Enter" && addItem()} />
@@ -956,6 +995,13 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
               <button onClick={() => setQuickAdd(null)} className={`rounded-xl border px-3 py-2 text-xs font-bold ${outlineButton}`}>{t.close}</button>
             </div>
             <div className="mt-4 grid gap-3">
+              <input
+                list="dues-friend-options"
+                className={`rounded-xl border px-3 py-2 text-sm outline-none ${input}`}
+                placeholder={t.person}
+                value={quickAdd.person}
+                onChange={e => setQuickAdd(value => ({ ...value, person: e.target.value }))}
+              />
               <input
                 className={`rounded-xl border px-3 py-2 text-sm outline-none ${input}`}
                 placeholder={t.item}
