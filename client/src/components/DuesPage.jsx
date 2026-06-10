@@ -92,9 +92,37 @@ function formatMoney(value) {
 }
 
 function statusClass(status, darkMode) {
-  if (status === "paid") return darkMode ? "bg-emerald-400/10 text-emerald-200" : "bg-emerald-50 text-emerald-700"
-  if (status === "pending") return darkMode ? "bg-amber-400/10 text-amber-200" : "bg-amber-50 text-amber-700"
-  return darkMode ? "bg-rose-400/10 text-rose-200" : "bg-rose-50 text-rose-700"
+  if (status === "paid") return darkMode ? "border border-emerald-400/25 bg-emerald-400/15 text-emerald-100" : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+  if (status === "pending") return darkMode ? "border border-amber-300/25 bg-amber-300/15 text-amber-100" : "border border-amber-200 bg-amber-50 text-amber-700"
+  return darkMode ? "border border-rose-300/25 bg-rose-400/15 text-rose-100" : "border border-rose-200 bg-rose-50 text-rose-700"
+}
+
+function personTone(state, darkMode) {
+  if (state === "paid") {
+    return {
+      section: darkMode ? "border-emerald-400/25 bg-emerald-400/5" : "border-emerald-200 bg-emerald-50/60",
+      card: darkMode ? "border-emerald-400/25 bg-emerald-950/20" : "border-emerald-200 bg-white",
+      strip: "bg-emerald-400",
+      amount: darkMode ? "text-emerald-200" : "text-emerald-700",
+      progress: "bg-emerald-400",
+    }
+  }
+  if (state === "pending") {
+    return {
+      section: darkMode ? "border-amber-300/25 bg-amber-300/5" : "border-amber-200 bg-amber-50/60",
+      card: darkMode ? "border-amber-300/30 bg-amber-950/15" : "border-amber-200 bg-white",
+      strip: "bg-amber-300",
+      amount: darkMode ? "text-amber-200" : "text-amber-700",
+      progress: "bg-amber-300",
+    }
+  }
+  return {
+    section: darkMode ? "border-rose-300/25 bg-rose-400/5" : "border-rose-200 bg-rose-50/60",
+    card: darkMode ? "border-rose-300/30 bg-rose-950/15" : "border-rose-200 bg-white",
+    strip: "bg-rose-400",
+    amount: darkMode ? "text-rose-200" : "text-rose-700",
+    progress: "bg-rose-400",
+  }
 }
 
 function CopyIcon() {
@@ -231,6 +259,10 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
       const paid = personItems.filter(item => item.status === "paid").reduce((sum, item) => sum + item.amount, 0)
       const pending = personItems.filter(item => item.status === "pending").reduce((sum, item) => sum + item.amount, 0)
       const outstanding = personItems.filter(item => item.status !== "paid").reduce((sum, item) => sum + item.amount, 0)
+      const unpaidCount = personItems.filter(item => item.status === "unpaid").length
+      const pendingCount = personItems.filter(item => item.status === "pending").length
+      const paidCount = personItems.filter(item => item.status === "paid").length
+      const state = outstanding <= 0 ? "paid" : unpaidCount > 0 ? "unpaid" : "pending"
       return {
         person,
         items: personItems,
@@ -238,12 +270,37 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
         paid,
         pending,
         outstanding,
-        unpaidCount: personItems.filter(item => item.status === "unpaid").length,
-        pendingCount: personItems.filter(item => item.status === "pending").length,
-        paidCount: personItems.filter(item => item.status === "paid").length,
+        state,
+        unpaidCount,
+        pendingCount,
+        paidCount,
       }
-    }).sort((a, b) => b.outstanding - a.outstanding || a.person.localeCompare(b.person))
+    }).sort((a, b) => {
+      const order = { unpaid: 0, pending: 1, paid: 2 }
+      return order[a.state] - order[b.state] || b.outstanding - a.outstanding || a.person.localeCompare(b.person)
+    })
   }, [grouped])
+
+  const personSections = useMemo(() => ([
+    {
+      id: "unpaid",
+      title: "ต้องเก็บเงิน",
+      hint: "ยังมีรายการที่ยังไม่จ่าย",
+      rows: personSummaries.filter(item => item.state === "unpaid"),
+    },
+    {
+      id: "pending",
+      title: "รอตรวจสลิป",
+      hint: "มีสลิปแล้ว รอคุณตรวจและกดรับเงิน",
+      rows: personSummaries.filter(item => item.state === "pending"),
+    },
+    {
+      id: "paid",
+      title: "จ่ายครบแล้ว",
+      hint: "ปิดยอดแล้ว เก็บไว้ดูย้อนหลัง",
+      rows: personSummaries.filter(item => item.state === "paid"),
+    },
+  ]), [personSummaries])
 
   function showNotice(message) {
     setNotice(message)
@@ -505,134 +562,155 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
             </div>
           )}
 
-          {!loading && personSummaries.map(summary => {
-            const { person, items: personItems, outstanding, total, paid, pending, unpaidCount, pendingCount, paidCount } = summary
-            const expanded = expandedPeople[person] ?? personSummaries.length <= 3
-            const visibleItems = expanded ? personItems : personItems.slice(0, 2)
-            const paidRatio = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
+          {!loading && personSections.filter(section => section.rows.length > 0).map(section => {
+            const tone = personTone(section.id, darkMode)
             return (
-              <article key={person} className={`overflow-hidden rounded-2xl border shadow-sm ${panel}`}>
-                <div className={`border-b p-4 ${darkMode ? "border-slate-700" : "border-slate-100"}`}>
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <button
-                      type="button"
-                      onClick={() => togglePersonExpanded(person)}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-lg font-black">{person}</p>
-                          <p className={`mt-1 text-xs ${muted}`}>{personItems.length} รายการ • จ่ายแล้ว {paidRatio}%</p>
+              <div key={section.id} className={`rounded-3xl border p-3 ${tone.section}`}>
+                <div className="mb-3 flex items-center justify-between gap-3 px-1">
+                  <div>
+                    <h3 className="text-sm font-black">{section.title}</h3>
+                    <p className={`mt-1 text-xs ${muted}`}>{section.hint}</p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-black ${statusClass(section.id === "unpaid" ? "unpaid" : section.id, darkMode)}`}>
+                    {section.rows.length} คน
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {section.rows.map(summary => {
+                    const { person, items: personItems, outstanding, total, paid, pending, unpaidCount, pendingCount, paidCount, state } = summary
+                    const expanded = expandedPeople[person] ?? section.id !== "paid"
+                    const visibleItems = expanded ? personItems : personItems.slice(0, 1)
+                    const paidRatio = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
+                    const currentTone = personTone(state, darkMode)
+                    return (
+                      <article key={person} className={`relative overflow-hidden rounded-2xl border shadow-sm ${currentTone.card}`}>
+                        <div className={`absolute inset-y-0 left-0 w-1.5 ${currentTone.strip}`} />
+                        <div className={`border-b p-4 pl-5 ${darkMode ? "border-slate-700/70" : "border-slate-100"}`}>
+                          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                            <button
+                              type="button"
+                              onClick={() => togglePersonExpanded(person)}
+                              className="min-w-0 flex-1 text-left"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-lg font-black">{person}</p>
+                                  <p className={`mt-1 text-xs ${muted}`}>{personItems.length} รายการ • จ่ายแล้ว {paidRatio}%</p>
+                                </div>
+                                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black ${statusClass(state, darkMode)}`}>
+                                  {state === "paid" ? t.paid : state === "pending" ? t.pending : t.unpaid}
+                                </span>
+                              </div>
+                              <div className={`mt-3 h-2 overflow-hidden rounded-full ${darkMode ? "bg-slate-800" : "bg-slate-100"}`}>
+                                <div className={`h-full rounded-full ${currentTone.progress}`} style={{ width: `${paidRatio}%` }} />
+                              </div>
+                            </button>
+
+                            <div className="grid grid-cols-2 gap-2 text-right md:w-72">
+                              <div className={`rounded-xl border px-3 py-2 ${darkMode ? "border-rose-300/20 bg-rose-400/10" : "border-rose-100 bg-rose-50"}`}>
+                                <p className={`text-[11px] font-bold ${muted}`}>{t.outstanding}</p>
+                                <p className={`mt-1 text-base font-black ${state === "paid" ? (darkMode ? "text-slate-400" : "text-slate-500") : (darkMode ? "text-rose-200" : "text-rose-700")}`}>฿{formatMoney(outstanding)}</p>
+                              </div>
+                              <div className={`rounded-xl border px-3 py-2 ${darkMode ? "border-amber-300/20 bg-amber-300/10" : "border-amber-100 bg-amber-50"}`}>
+                                <p className={`text-[11px] font-bold ${muted}`}>รอตรวจ</p>
+                                <p className={`mt-1 text-base font-black ${pending > 0 ? (darkMode ? "text-amber-200" : "text-amber-700") : (darkMode ? "text-slate-400" : "text-slate-500")}`}>฿{formatMoney(pending)}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex flex-wrap gap-2">
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-black ${statusClass("unpaid", darkMode)}`}>{t.unpaid} {unpaidCount}</span>
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-black ${statusClass("pending", darkMode)}`}>{t.pending} {pendingCount}</span>
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-black ${statusClass("paid", darkMode)}`}>{t.paid} {paidCount}</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => togglePersonExpanded(person)}
+                                className={`rounded-xl border px-3 py-2 text-xs font-bold ${outlineButton}`}
+                              >
+                                {expanded ? "ซ่อนรายการ" : `ดูรายการ (${personItems.length})`}
+                              </button>
+                              <button
+                                onClick={() => copyToClipboard(buildDuesText(person))}
+                                title={t.copyPersonText}
+                                aria-label={t.copyPersonText}
+                                className={iconButton}
+                              >
+                                <CopyIcon />
+                              </button>
+                              <button
+                                onClick={() => openPaymentLink(person)}
+                                title={t.sendLink}
+                                aria-label={t.sendLink}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-700"
+                              >
+                                <LinkIcon />
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${outstanding > 0 ? statusClass("unpaid", darkMode) : statusClass("paid", darkMode)}`}>
-                          {outstanding > 0 ? t.unpaid : t.paid}
-                        </span>
-                      </div>
-                      <div className={`mt-3 h-2 overflow-hidden rounded-full ${darkMode ? "bg-slate-800" : "bg-slate-100"}`}>
-                        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${paidRatio}%` }} />
-                      </div>
-                    </button>
 
-                    <div className="grid grid-cols-2 gap-2 text-right md:w-72">
-                      <div className={`rounded-xl border px-3 py-2 ${softPanel}`}>
-                        <p className={`text-[11px] font-bold ${muted}`}>{t.outstanding}</p>
-                        <p className="mt-1 text-base font-black text-rose-300">฿{formatMoney(outstanding)}</p>
-                      </div>
-                      <div className={`rounded-xl border px-3 py-2 ${softPanel}`}>
-                        <p className={`text-[11px] font-bold ${muted}`}>รอตรวจ</p>
-                        <p className="mt-1 text-base font-black text-amber-300">฿{formatMoney(pending)}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap gap-2">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass("unpaid", darkMode)}`}>{t.unpaid} {unpaidCount}</span>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass("pending", darkMode)}`}>{t.pending} {pendingCount}</span>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass("paid", darkMode)}`}>{t.paid} {paidCount}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => togglePersonExpanded(person)}
-                        className={`rounded-xl border px-3 py-2 text-xs font-bold ${outlineButton}`}
-                      >
-                        {expanded ? "ซ่อนรายการ" : `ดูรายการ (${personItems.length})`}
-                      </button>
-                      <button
-                        onClick={() => copyToClipboard(buildDuesText(person))}
-                        title={t.copyPersonText}
-                        aria-label={t.copyPersonText}
-                        className={iconButton}
-                      >
-                        <CopyIcon />
-                      </button>
-                      <button
-                        onClick={() => openPaymentLink(person)}
-                        title={t.sendLink}
-                        aria-label={t.sendLink}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-700"
-                      >
-                        <LinkIcon />
-                      </button>
-                    </div>
-                  </div>
+                        <div className={`divide-y ${darkMode ? "divide-slate-800/80" : "divide-slate-100"}`}>
+                          {visibleItems.map(item => (
+                            <div key={item.id} className={`grid gap-3 px-4 py-3 pl-5 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center ${item.status === "paid" ? (darkMode ? "bg-emerald-400/[0.03]" : "bg-emerald-50/40") : item.status === "pending" ? (darkMode ? "bg-amber-300/[0.04]" : "bg-amber-50/40") : (darkMode ? "bg-rose-400/[0.035]" : "bg-rose-50/40")}`}>
+                              <div>
+                                <p className="text-sm font-semibold">{item.title}</p>
+                                {(item.note || item.slipName) && <p className={`mt-1 text-xs ${muted}`}>{item.slipName || item.note}</p>}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-sm font-black ${item.status === "paid" ? currentTone.amount : ""}`}>฿{formatMoney(item.amount)}</span>
+                                <span className={`rounded-full px-2.5 py-1 text-xs font-black ${statusClass(item.status, darkMode)}`}>
+                                  {t[item.status]}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-2 lg:justify-end">
+                                <button
+                                  onClick={() => setItemStatus(item.id, item.status === "paid" ? "unpaid" : "paid")}
+                                  title={item.status === "paid" ? t.markUnpaid : t.markPaid}
+                                  aria-label={item.status === "paid" ? t.markUnpaid : t.markPaid}
+                                  className={iconButton}
+                                >
+                                  {item.status === "paid" ? <UndoIcon /> : <CheckIcon />}
+                                </button>
+                                {(item.slipUrl || item.slipName) && (
+                                  <button
+                                    onClick={() => openSlipModal(item)}
+                                    title={t.viewSlip}
+                                    aria-label={t.viewSlip}
+                                    className={iconButton}
+                                  >
+                                    <ImageIcon />
+                                  </button>
+                                )}
+                                <label
+                                  title={t.uploadSlip}
+                                  aria-label={t.uploadSlip}
+                                  className={`cursor-pointer ${iconButton}`}
+                                >
+                                  <UploadIcon />
+                                  <input type="file" accept="image/*,.pdf" className="hidden" onChange={e => attachSlip(item.id, e.target.files?.[0])} />
+                                </label>
+                              </div>
+                            </div>
+                          ))}
+                          {!expanded && personItems.length > visibleItems.length && (
+                            <button
+                              type="button"
+                              onClick={() => togglePersonExpanded(person)}
+                              className={`w-full px-4 py-3 text-center text-xs font-bold ${darkMode ? "text-sky-300 hover:bg-slate-800/60" : "text-sky-700 hover:bg-slate-50"}`}
+                            >
+                              ดูเพิ่มอีก {personItems.length - visibleItems.length} รายการ
+                            </button>
+                          )}
+                        </div>
+                      </article>
+                    )
+                  })}
                 </div>
-
-                <div className={`divide-y ${darkMode ? "divide-slate-800" : "divide-slate-100"}`}>
-                  {visibleItems.map(item => (
-                    <div key={item.id} className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
-                      <div>
-                        <p className="text-sm font-semibold">{item.title}</p>
-                        {(item.note || item.slipName) && <p className={`mt-1 text-xs ${muted}`}>{item.slipName || item.note}</p>}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-black">฿{formatMoney(item.amount)}</span>
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass(item.status, darkMode)}`}>
-                          {t[item.status]}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-2 lg:justify-end">
-                        <button
-                          onClick={() => setItemStatus(item.id, item.status === "paid" ? "unpaid" : "paid")}
-                          title={item.status === "paid" ? t.markUnpaid : t.markPaid}
-                          aria-label={item.status === "paid" ? t.markUnpaid : t.markPaid}
-                          className={iconButton}
-                        >
-                          {item.status === "paid" ? <UndoIcon /> : <CheckIcon />}
-                        </button>
-                        {(item.slipUrl || item.slipName) && (
-                          <button
-                            onClick={() => openSlipModal(item)}
-                            title={t.viewSlip}
-                            aria-label={t.viewSlip}
-                            className={iconButton}
-                          >
-                            <ImageIcon />
-                          </button>
-                        )}
-                        <label
-                          title={t.uploadSlip}
-                          aria-label={t.uploadSlip}
-                          className={`cursor-pointer ${iconButton}`}
-                        >
-                          <UploadIcon />
-                          <input type="file" accept="image/*,.pdf" className="hidden" onChange={e => attachSlip(item.id, e.target.files?.[0])} />
-                        </label>
-                      </div>
-                    </div>
-                  ))}
-                  {!expanded && personItems.length > visibleItems.length && (
-                    <button
-                      type="button"
-                      onClick={() => togglePersonExpanded(person)}
-                      className={`w-full px-4 py-3 text-center text-xs font-bold ${darkMode ? "text-sky-300 hover:bg-slate-800/60" : "text-sky-700 hover:bg-slate-50"}`}
-                    >
-                      ดูเพิ่มอีก {personItems.length - visibleItems.length} รายการ
-                    </button>
-                  )}
-                </div>
-              </article>
+              </div>
             )
           })}
         </section>
