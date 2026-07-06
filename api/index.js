@@ -546,18 +546,19 @@ function parseTelegramText(text = "") {
   return { command, args: rest, body: rest.join(" "), text: cleaned }
 }
 
-function parseTelegramAdd(body) {
+function parseTelegramAdd(body, defaultCreditor = "") {
   const tokens = body.split(" ").filter(Boolean)
   const byIndex = tokens.findIndex(token => /^by$/i.test(token) || token === "จ่ายโดย")
   const splitIndex = tokens.findIndex(token => /^split$/i.test(token) || token === "หาร")
   const monthIndex = tokens.findIndex(token => /^month$/i.test(token) || token === "เดือน")
   const amountIndex = tokens.findIndex(token => !Number.isNaN(Number(String(token).replace(/,/g, ""))))
 
-  if (amountIndex <= 0 || byIndex === -1 || splitIndex === -1 || splitIndex <= byIndex + 1) return null
+  if (amountIndex <= 0 || splitIndex === -1 || splitIndex <= amountIndex) return null
+  if (byIndex !== -1 && splitIndex <= byIndex + 1) return null
 
   const title = tokens.slice(0, amountIndex).join(" ")
   const amount = Number(tokens[amountIndex].replace(/,/g, ""))
-  const creditor = tokens[byIndex + 1]
+  const creditor = byIndex !== -1 ? tokens[byIndex + 1] : defaultCreditor
   const month = monthIndex !== -1 ? tokens[monthIndex + 1] : currentBangkokMonth()
   const splitEnd = monthIndex !== -1 ? monthIndex : tokens.length
   const splitWith = tokens.slice(splitIndex + 1, splitEnd)
@@ -625,6 +626,80 @@ async function telegramCanManageDue(context, due) {
   if (context.isAdmin) return true
   if (due.created_by_user_id && context.member?.user_id && Number(due.created_by_user_id) === Number(context.member.user_id)) return true
   return Boolean(due.created_by_telegram_id && String(due.created_by_telegram_id) === context.telegramUserId)
+}
+
+function verifyTelegramWebAppInitData(initData) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  if (!token || !initData) return null
+
+  const params = new URLSearchParams(initData)
+  const hash = params.get("hash")
+  if (!hash) return null
+  params.delete("hash")
+
+  const dataCheckString = [...params.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n")
+  const secretKey = crypto.createHmac("sha256", "WebAppData").update(token).digest()
+  const calculated = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex")
+  const hashBuffer = Buffer.from(hash, "hex")
+  const calculatedBuffer = Buffer.from(calculated, "hex")
+  if (hashBuffer.length !== calculatedBuffer.length || !crypto.timingSafeEqual(hashBuffer, calculatedBuffer)) return null
+
+  const authDate = Number(params.get("auth_date") || 0)
+  const maxAgeSeconds = Math.min(Math.max(Number(process.env.TELEGRAM_WEBAPP_AUTH_MAX_AGE_SECONDS) || 86400, 60), 604800)
+  if (!authDate || Date.now() / 1000 - authDate > maxAgeSeconds) return null
+
+  let user = null
+  try {
+    user = JSON.parse(params.get("user") || "null")
+  } catch {
+    user = null
+  }
+  if (!user?.id) return null
+
+  return {
+    user,
+    queryId: params.get("query_id") || "",
+    chatType: params.get("chat_type") || "",
+    chatInstance: params.get("chat_instance") || "",
+  }
+}
+
+async function getTelegramWebAppContext(initData, chatId) {
+  await ensureTelegramSchema()
+  const verified = verifyTelegramWebAppInitData(initData)
+  if (!verified) return { status: 401, error: "Invalid Telegram session" }
+
+  const normalizedChatId = String(chatId || "").trim()
+  const telegramUserId = String(verified.user.id)
+  const allowedChatIds = telegramAllowedChatIds()
+  if (allowedChatIds.length > 0 && !allowedChatIds.includes(normalizedChatId)) {
+    return { status: 403, error: "This Telegram chat is not allowed" }
+  }
+
+  const [chatRows] = await db.query("SELECT * FROM telegram_chats WHERE chat_id=? AND enabled=1", [normalizedChatId])
+  const linkedChat = chatRows[0]
+  if (!linkedChat) return { status: 404, error: "Telegram chat is not connected" }
+
+  const [memberRows] = await db.query(
+    "SELECT * FROM telegram_members WHERE chat_id=? AND telegram_user_id=?",
+    [normalizedChatId, telegramUserId]
+  )
+  const member = memberRows[0]
+  if (!member?.user_id) return { status: 403, error: "Please connect your Google account first" }
+
+  return {
+    status: 200,
+    verified,
+    chatId: normalizedChatId,
+    telegramUserId,
+    linkedChat,
+    member,
+    isAdmin: member.role === "admin" || telegramAdminIds().includes(telegramUserId),
+    ownerUserId: linkedChat.user_id,
+  }
 }
 
 function formatAdminTime(date = new Date()) {
@@ -1899,7 +1974,7 @@ async function handleTelegramAdd(context, body) {
   if (!context.linkedChat) return "This chat is not connected. Use /connect from Harbill first."
   if (!context.member?.user_id) return "Please connect your Google account before creating items."
 
-  const parsed = parseTelegramAdd(body)
+  const parsed = parseTelegramAdd(body, context.member.friend_name || telegramName(context.from))
   if (!parsed) {
     return [
       "Invalid add command.",
@@ -1907,11 +1982,10 @@ async function handleTelegramAdd(context, body) {
     ].join("\n")
   }
 
-  const divisor = parsed.splitWith.length
   const debtors = parsed.splitWith.filter(name => name !== parsed.creditor)
   if (debtors.length === 0) return "No debtor to charge after excluding the payer."
 
-  const share = Math.round((parsed.amount / divisor) * 100) / 100
+  const share = Math.round((parsed.amount / debtors.length) * 100) / 100
   const createdIds = []
   for (const person of debtors) {
     await db.query("INSERT IGNORE INTO friends (user_id, name) VALUES (?, ?)", [context.ownerUserId, person])
@@ -1932,7 +2006,7 @@ async function handleTelegramAdd(context, body) {
       parsed.title,
       share,
       parsed.month,
-      `Original amount ${parsed.amount}; split ${divisor} ways`,
+      `Original amount ${parsed.amount}; split ${debtors.length} debtors`,
       context.chatId
     ])
     createdIds.push(result.insertId)
@@ -1940,8 +2014,8 @@ async function handleTelegramAdd(context, body) {
 
   const reply = [
     `Added ${parsed.title} ${parsed.amount.toFixed(2)}`,
-    `Paid by: ${parsed.creditor}`,
-    `Split: ${divisor} ways, ${share.toFixed(2)} each`,
+    `Pay to: ${parsed.creditor}`,
+    `Debtors: ${debtors.length}, ${share.toFixed(2)} each`,
     `Created dues: ${createdIds.map(id => `#${id}`).join(", ")}`
   ].join("\n")
   const sent = await sendTelegramMessage(context.chatId, reply)
@@ -2035,6 +2109,120 @@ async function handleTelegramList(context, args) {
   ].join("\n")
 }
 
+async function handleTelegramName(context, args) {
+  if (!context.linkedChat) return "This chat is not connected."
+  if (!context.member?.user_id) return "Please connect your Google account first."
+  const name = args.join(" ").trim()
+  if (!name) return "Use /name <your display name>."
+
+  await db.query(
+    "UPDATE telegram_members SET friend_name=? WHERE chat_id=? AND telegram_user_id=?",
+    [name, context.chatId, context.telegramUserId]
+  )
+  await db.query("INSERT IGNORE INTO friends (user_id, name) VALUES (?, ?)", [context.ownerUserId, name])
+  return `Your Telegram name is now ${name}. New items you create will be paid to this name.`
+}
+
+function telegramMainMenu(context) {
+  return {
+    inline_keyboard: [
+      [{
+        text: "เพิ่มรายการ",
+        web_app: { url: `${CLIENT_URL}/telegram/add?chat_id=${encodeURIComponent(context.chatId)}` }
+      }],
+      [
+        { text: "รายการเดือนนี้", callback_data: "/list" },
+        { text: "วิธีใช้", callback_data: "/help" }
+      ]
+    ]
+  }
+}
+
+app.post("/telegram/web-app/context", async (req, res) => {
+  const context = await getTelegramWebAppContext(req.body?.initData, req.body?.chatId)
+  if (context.status !== 200) return res.status(context.status).json({ error: context.error })
+
+  const [friends] = await db.query("SELECT id, name FROM friends WHERE user_id=? ORDER BY name", [context.ownerUserId])
+  res.json({
+    chat: {
+      id: context.chatId,
+      title: context.linkedChat.title || ""
+    },
+    member: {
+      name: context.member.friend_name || context.verified.user.first_name || telegramName(context.verified.user),
+      role: context.member.role
+    },
+    friends
+  })
+})
+
+app.post("/telegram/web-app/dues", async (req, res) => {
+  const context = await getTelegramWebAppContext(req.body?.initData, req.body?.chatId)
+  if (context.status !== 200) return res.status(context.status).json({ error: context.error })
+
+  const title = String(req.body.title || "").trim()
+  const amount = Number(String(req.body.amount || "").replace(/,/g, ""))
+  const month = String(req.body.month || "").trim().slice(0, 7)
+  const note = String(req.body.note || "").trim()
+  const debtors = Array.isArray(req.body.debtors)
+    ? req.body.debtors.map(name => String(name || "").trim()).filter(Boolean)
+    : []
+  const creditor = String(context.member.friend_name || context.verified.user.first_name || telegramName(context.verified.user)).trim()
+
+  if (!title || !Number.isFinite(amount) || amount <= 0 || !/^\d{4}-\d{2}$/.test(month) || debtors.length === 0) {
+    return res.status(400).json({ error: "Invalid due item" })
+  }
+
+  const uniqueDebtors = [...new Set(debtors)].filter(name => name !== creditor)
+  if (uniqueDebtors.length === 0) return res.status(400).json({ error: "No debtor selected" })
+
+  const share = Math.round((amount / uniqueDebtors.length) * 100) / 100
+  const createdIds = []
+  for (const person of uniqueDebtors) {
+    await db.query("INSERT IGNORE INTO friends (user_id, name) VALUES (?, ?)", [context.ownerUserId, person])
+    const [result] = await db.query(`
+      INSERT INTO dues (
+        user_id, created_by_user_id, created_by_telegram_id, created_by_name,
+        person_name, creditor_name, title, amount, due_month, status, note,
+        source, approval_status, telegram_chat_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, 'telegram', 'approved', ?)
+    `, [
+      context.ownerUserId,
+      context.member.user_id,
+      context.telegramUserId,
+      creditor,
+      person,
+      creditor,
+      title,
+      share,
+      month,
+      note || `Created from Telegram Web App; original amount ${amount}`,
+      context.chatId
+    ])
+    createdIds.push(result.insertId)
+  }
+
+  const text = [
+    `เพิ่มรายการแล้ว: ${title}`,
+    `คนรับเงิน: ${creditor}`,
+    `ยอดรวม: ${amount.toFixed(2)}`,
+    `คนต้องจ่าย: ${uniqueDebtors.length} คน, คนละ ${share.toFixed(2)}`,
+    `รายการ: ${createdIds.map(id => `#${id}`).join(", ")}`
+  ].join("\n")
+  const sent = await sendTelegramMessage(context.chatId, text, {
+    reply_markup: telegramMainMenu({ chatId: context.chatId })
+  })
+  if (sent?.message_id) {
+    await db.query(
+      `UPDATE dues SET telegram_message_id=? WHERE id IN (${createdIds.map(() => "?").join(",")}) AND user_id=?`,
+      [String(sent.message_id), ...createdIds, context.ownerUserId]
+    )
+  }
+
+  res.json({ ok: true, ids: createdIds, creditor, share })
+})
+
 app.post("/telegram/webhook", async (req, res) => {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET
   if (secret) {
@@ -2042,7 +2230,8 @@ app.post("/telegram/webhook", async (req, res) => {
     if (provided !== secret) return res.status(401).json({ error: "Unauthorized" })
   }
 
-  const message = req.body?.message || req.body?.edited_message || req.body?.callback_query?.message
+  const callbackQuery = req.body?.callback_query
+  const message = req.body?.message || req.body?.edited_message || (callbackQuery?.message ? { ...callbackQuery.message, from: callbackQuery.from } : null)
   const text = req.body?.message?.text || req.body?.edited_message?.text || req.body?.callback_query?.data || ""
   if (!message || !text) return res.json({ ok: true })
 
@@ -2057,14 +2246,17 @@ app.post("/telegram/webhook", async (req, res) => {
 
   try {
     if (command === "/start" || command === "/help") {
-      reply = [
-        "Harbill commands:",
-        "/connect <token>",
-        "/add Dinner 900 by Bee split Me,A,C month 2026-07",
-        "/edit <id> amount 450",
+      await sendTelegramMessage(context.chatId, [
+      "Harbill commands:",
+      "กดปุ่มเพิ่มรายการเพื่อเปิดฟอร์มใน Telegram",
+        "/connect <token> เพื่อเชื่อม Google account",
+        "/name Bee เพื่อตั้งชื่อคนรับเงินของคุณ",
+        "/add Dinner 900 split Me,A,C",
+      "/edit <id> amount 450",
         "/paid <id>",
         "/list 2026-07"
-      ].join("\n")
+      ].join("\n"), { reply_markup: telegramMainMenu(context) })
+      reply = null
     } else if (command === "/connect") {
       reply = await handleTelegramConnect(context, args[0])
     } else if (command === "/add" || command === "/เพิ่ม") {
@@ -2075,6 +2267,8 @@ app.post("/telegram/webhook", async (req, res) => {
       reply = await handleTelegramPaid(context, args)
     } else if (command === "/list" || command === "/รายการ") {
       reply = await handleTelegramList(context, args)
+    } else if (command === "/name" || command === "/ชื่อ") {
+      reply = await handleTelegramName(context, args)
     }
   } catch (err) {
     console.error("Telegram webhook failed:", err)

@@ -107,6 +107,8 @@ export const api = {
 
   // Telegram
   createTelegramConnectToken: () => post("/telegram/connect-token", {}),
+  getTelegramWebAppContext: (data) => post("/telegram/web-app/context", data),
+  createTelegramWebAppDue: (data) => post("/telegram/web-app/dues", data),
 
   // Analytics / Admin
   trackPageView: (data) => fetch(`${BASE}/analytics/page-view`, {
