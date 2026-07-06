@@ -2138,6 +2138,35 @@ function telegramMainMenu(context) {
   }
 }
 
+function telegramReplyMenu() {
+  return {
+    keyboard: [
+      [{ text: "เพิ่มรายการ" }, { text: "รายการเดือนนี้" }],
+      [{ text: "วิธีใช้" }]
+    ],
+    resize_keyboard: true,
+    is_persistent: true
+  }
+}
+
+async function sendTelegramMenu(context) {
+  const webAppUrl = `${CLIENT_URL}/telegram/add?chat_id=${encodeURIComponent(context.chatId)}`
+  await sendTelegramMessage(context.chatId, "เมนู Harbill พร้อมใช้งานครับ", {
+    reply_markup: telegramReplyMenu()
+  })
+  await sendTelegramMessage(context.chatId, "กดปุ่มด้านล่างเพื่อเพิ่มรายการแบบฟอร์ม", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "เพิ่มรายการ", web_app: { url: webAppUrl } }],
+        [
+          { text: "รายการเดือนนี้", callback_data: "/list" },
+          { text: "วิธีใช้", callback_data: "/help" }
+        ]
+      ]
+    }
+  })
+}
+
 app.post("/telegram/web-app/context", async (req, res) => {
   const context = await getTelegramWebAppContext(req.body?.initData, req.body?.chatId)
   if (context.status !== 200) return res.status(context.status).json({ error: context.error })
@@ -2245,10 +2274,13 @@ app.post("/telegram/webhook", async (req, res) => {
   let reply = null
 
   try {
-    if (command === "/start" || command === "/help") {
+    if (command === "/start" || command === "/menu" || command === "เมนู") {
+      await sendTelegramMenu(context)
+      reply = null
+    } else if (command === "/help" || command === "วิธีใช้") {
       await sendTelegramMessage(context.chatId, [
-      "Harbill commands:",
-      "กดปุ่มเพิ่มรายการเพื่อเปิดฟอร์มใน Telegram",
+        "Harbill commands:",
+        "กดปุ่มเพิ่มรายการเพื่อเปิดฟอร์มใน Telegram",
         "/connect <token> เพื่อเชื่อม Google account",
         "/name Bee เพื่อตั้งชื่อคนรับเงินของคุณ",
         "/add Dinner 900 split Me,A,C",
@@ -2257,6 +2289,18 @@ app.post("/telegram/webhook", async (req, res) => {
         "/list 2026-07"
       ].join("\n"), { reply_markup: telegramMainMenu(context) })
       reply = null
+    } else if (command === "เพิ่มรายการ") {
+      await sendTelegramMessage(context.chatId, "กดปุ่มนี้เพื่อเปิดฟอร์มเพิ่มรายการ", {
+        reply_markup: {
+          inline_keyboard: [[{
+            text: "เพิ่มรายการ",
+            web_app: { url: `${CLIENT_URL}/telegram/add?chat_id=${encodeURIComponent(context.chatId)}` }
+          }]]
+        }
+      })
+      reply = null
+    } else if (command === "รายการเดือนนี้") {
+      reply = await handleTelegramList(context, [])
     } else if (command === "/connect") {
       reply = await handleTelegramConnect(context, args[0])
     } else if (command === "/add" || command === "/เพิ่ม") {
