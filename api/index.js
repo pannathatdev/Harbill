@@ -37,6 +37,7 @@ let aiUsageSchemaReady = false
 let monetizationSchemaReady = false
 let analyticsSchemaReady = false
 let duesSchemaReady = false
+let telegramSchemaReady = false
 const adminSessionAttempts = new Map()
 
 function dbErrorMessage(err) {
@@ -212,10 +213,45 @@ async function ensureDuesSchema() {
     FROM INFORMATION_SCHEMA.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
       AND TABLE_NAME = 'dues'
-      AND COLUMN_NAME = 'due_slip_id'
+      AND COLUMN_NAME IN (
+        'due_slip_id',
+        'created_by_user_id',
+        'created_by_telegram_id',
+        'created_by_name',
+        'creditor_name',
+        'source',
+        'approval_status',
+        'telegram_chat_id',
+        'telegram_message_id'
+      )
   `)
-  if (!dueColumns[0]) {
+  const existingDueColumns = new Set(dueColumns.map(column => column.COLUMN_NAME))
+  if (!existingDueColumns.has("due_slip_id")) {
     await db.query("ALTER TABLE dues ADD COLUMN due_slip_id INT NULL AFTER note")
+  }
+  if (!existingDueColumns.has("created_by_user_id")) {
+    await db.query("ALTER TABLE dues ADD COLUMN created_by_user_id INT NULL AFTER user_id")
+  }
+  if (!existingDueColumns.has("created_by_telegram_id")) {
+    await db.query("ALTER TABLE dues ADD COLUMN created_by_telegram_id VARCHAR(64) NULL AFTER created_by_user_id")
+  }
+  if (!existingDueColumns.has("created_by_name")) {
+    await db.query("ALTER TABLE dues ADD COLUMN created_by_name VARCHAR(255) NULL AFTER created_by_telegram_id")
+  }
+  if (!existingDueColumns.has("creditor_name")) {
+    await db.query("ALTER TABLE dues ADD COLUMN creditor_name VARCHAR(255) NULL AFTER person_name")
+  }
+  if (!existingDueColumns.has("source")) {
+    await db.query("ALTER TABLE dues ADD COLUMN source VARCHAR(32) NOT NULL DEFAULT 'web' AFTER note")
+  }
+  if (!existingDueColumns.has("approval_status")) {
+    await db.query("ALTER TABLE dues ADD COLUMN approval_status VARCHAR(32) NOT NULL DEFAULT 'approved' AFTER source")
+  }
+  if (!existingDueColumns.has("telegram_chat_id")) {
+    await db.query("ALTER TABLE dues ADD COLUMN telegram_chat_id VARCHAR(64) NULL AFTER approval_status")
+  }
+  if (!existingDueColumns.has("telegram_message_id")) {
+    await db.query("ALTER TABLE dues ADD COLUMN telegram_message_id VARCHAR(64) NULL AFTER telegram_chat_id")
   }
 
   const [slipColumns] = await db.query(`
@@ -240,6 +276,58 @@ async function ensureDuesSchema() {
   }
 
   duesSchemaReady = true
+}
+
+async function ensureTelegramSchema() {
+  if (telegramSchemaReady) return
+
+  await ensureDuesSchema()
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS telegram_chats (
+      chat_id VARCHAR(64) PRIMARY KEY,
+      user_id INT NOT NULL,
+      title VARCHAR(255) NULL,
+      type VARCHAR(32) NULL,
+      enabled TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_telegram_chats_user_id (user_id),
+      CONSTRAINT fk_telegram_chats_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS telegram_members (
+      chat_id VARCHAR(64) NOT NULL,
+      telegram_user_id VARCHAR(64) NOT NULL,
+      user_id INT NULL,
+      friend_name VARCHAR(255) NULL,
+      role VARCHAR(32) NOT NULL DEFAULT 'member',
+      username VARCHAR(255) NULL,
+      display_name VARCHAR(255) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (chat_id, telegram_user_id),
+      INDEX idx_telegram_members_user_id (user_id),
+      INDEX idx_telegram_members_username (chat_id, username),
+      CONSTRAINT fk_telegram_members_chat FOREIGN KEY (chat_id) REFERENCES telegram_chats(chat_id) ON DELETE CASCADE,
+      CONSTRAINT fk_telegram_members_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS telegram_connect_tokens (
+      token VARCHAR(64) PRIMARY KEY,
+      user_id INT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT fk_telegram_connect_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+
+  telegramSchemaReady = true
 }
 
 function adminEmails() {
@@ -397,6 +485,146 @@ async function notifyTelegram(text) {
     console.error("Telegram notification failed:", err.message)
     return false
   }
+}
+
+async function sendTelegramMessage(chatId, text, options = {}) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  if (!token || !chatId) return null
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        disable_web_page_preview: true,
+        ...options
+      })
+    })
+    const data = await response.json().catch(() => null)
+    return response.ok ? data?.result || null : null
+  } catch (err) {
+    console.error("Telegram send failed:", err.message)
+    return null
+  }
+}
+
+function telegramName(user = {}) {
+  return [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || user.username || String(user.id || "")
+}
+
+function telegramAdminIds() {
+  return String(process.env.TELEGRAM_ADMIN_USER_IDS || "")
+    .split(",")
+    .map(id => id.trim())
+    .filter(Boolean)
+}
+
+function telegramAllowedChatIds() {
+  return String(process.env.TELEGRAM_ALLOWED_CHAT_IDS || process.env.TELEGRAM_ALLOWED_CHAT_ID || "")
+    .split(",")
+    .map(id => id.trim())
+    .filter(Boolean)
+}
+
+function currentBangkokMonth() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit"
+  }).formatToParts(new Date())
+  const year = parts.find(part => part.type === "year")?.value
+  const month = parts.find(part => part.type === "month")?.value
+  return `${year}-${month}`
+}
+
+function parseTelegramText(text = "") {
+  const cleaned = String(text || "").trim().replace(/\s+/g, " ")
+  const [rawCommand = "", ...rest] = cleaned.split(" ")
+  const command = rawCommand.split("@")[0].toLowerCase()
+  return { command, args: rest, body: rest.join(" "), text: cleaned }
+}
+
+function parseTelegramAdd(body) {
+  const tokens = body.split(" ").filter(Boolean)
+  const byIndex = tokens.findIndex(token => /^by$/i.test(token) || token === "จ่ายโดย")
+  const splitIndex = tokens.findIndex(token => /^split$/i.test(token) || token === "หาร")
+  const monthIndex = tokens.findIndex(token => /^month$/i.test(token) || token === "เดือน")
+  const amountIndex = tokens.findIndex(token => !Number.isNaN(Number(String(token).replace(/,/g, ""))))
+
+  if (amountIndex <= 0 || byIndex === -1 || splitIndex === -1 || splitIndex <= byIndex + 1) return null
+
+  const title = tokens.slice(0, amountIndex).join(" ")
+  const amount = Number(tokens[amountIndex].replace(/,/g, ""))
+  const creditor = tokens[byIndex + 1]
+  const month = monthIndex !== -1 ? tokens[monthIndex + 1] : currentBangkokMonth()
+  const splitEnd = monthIndex !== -1 ? monthIndex : tokens.length
+  const splitWith = tokens.slice(splitIndex + 1, splitEnd)
+    .flatMap(value => value.split(","))
+    .map(value => value.trim())
+    .filter(Boolean)
+
+  if (!title || !Number.isFinite(amount) || amount <= 0 || !creditor || !/^\d{4}-\d{2}$/.test(month) || splitWith.length === 0) {
+    return null
+  }
+
+  return { title, amount, creditor, splitWith, month }
+}
+
+async function getTelegramContext(message) {
+  await ensureTelegramSchema()
+
+  const chat = message.chat || {}
+  const from = message.from || {}
+  const chatId = String(chat.id || "")
+  const telegramUserId = String(from.id || "")
+  if (!chatId || !telegramUserId) return null
+
+  const allowedChatIds = telegramAllowedChatIds()
+  if (allowedChatIds.length > 0 && !allowedChatIds.includes(chatId)) {
+    return { blocked: true, chatId, reason: "This Telegram chat is not allowed." }
+  }
+
+  const [chatRows] = await db.query("SELECT * FROM telegram_chats WHERE chat_id=? AND enabled=1", [chatId])
+  const linkedChat = chatRows[0] || null
+  const [memberRows] = linkedChat
+    ? await db.query("SELECT * FROM telegram_members WHERE chat_id=? AND telegram_user_id=?", [chatId, telegramUserId])
+    : [[]]
+  const member = memberRows[0] || null
+  const envAdmin = telegramAdminIds().includes(telegramUserId)
+  const isAdmin = envAdmin || member?.role === "admin"
+
+  return {
+    chatId,
+    chat,
+    from,
+    telegramUserId,
+    linkedChat,
+    member,
+    isAdmin,
+    ownerUserId: linkedChat?.user_id || null
+  }
+}
+
+async function upsertTelegramMember({ chatId, telegramUserId, userId = null, friendName = null, role = "member", username = null, displayName = null }) {
+  await db.query(`
+    INSERT INTO telegram_members (chat_id, telegram_user_id, user_id, friend_name, role, username, display_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      user_id=COALESCE(VALUES(user_id), user_id),
+      friend_name=COALESCE(VALUES(friend_name), friend_name),
+      role=VALUES(role),
+      username=VALUES(username),
+      display_name=VALUES(display_name)
+  `, [chatId, telegramUserId, userId, friendName, role, username, displayName])
+}
+
+async function telegramCanManageDue(context, due) {
+  if (!context || !due) return false
+  if (context.isAdmin) return true
+  if (due.created_by_user_id && context.member?.user_id && Number(due.created_by_user_id) === Number(context.member.user_id)) return true
+  return Boolean(due.created_by_telegram_id && String(due.created_by_telegram_id) === context.telegramUserId)
 }
 
 function formatAdminTime(date = new Date()) {
@@ -659,6 +887,21 @@ app.get("/auth/me", requireAuth, async (req, res) => {
   const user = rows[0] || req.user
   const { id, email, name, avatar } = user
   res.json({ id, email, name, avatar, ...userPlan(user) })
+})
+
+app.post("/telegram/connect-token", requireAuth, async (req, res) => {
+  await ensureTelegramSchema()
+  const token = crypto.randomBytes(16).toString("hex")
+  const expiresMinutes = Math.min(Math.max(Number(process.env.TELEGRAM_CONNECT_TOKEN_MINUTES) || 15, 1), 1440)
+  await db.query(
+    "INSERT INTO telegram_connect_tokens (token, user_id, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))",
+    [token, req.user.id, expiresMinutes]
+  )
+  res.json({
+    token,
+    command: `/connect ${token}`,
+    expiresMinutes
+  })
 })
 
 app.post("/analytics/page-view", optionalAuth, async (req, res) => {
@@ -1218,6 +1461,14 @@ function mapDue(row) {
     slipUrl: hasStoredSlip ? `${API_BASE_URL}/dues/${row.id}/slip` : "",
     slipCheckStatus: row.check_status || row.slip_check_status || "",
     slipCheckNote: row.check_note || row.slip_check_note || "",
+    creditor: row.creditor_name || "",
+    source: row.source || "web",
+    approvalStatus: row.approval_status || "approved",
+    createdByUserId: row.created_by_user_id || null,
+    createdByTelegramId: row.created_by_telegram_id || "",
+    createdByName: row.created_by_name || "",
+    telegramChatId: row.telegram_chat_id || "",
+    telegramMessageId: row.telegram_message_id || "",
     paidAt: row.paid_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -1378,15 +1629,16 @@ app.post("/dues", requireAuth, async (req, res) => {
   const amount = parseFloat(req.body.amount)
   const month = String(req.body.month || "").trim().slice(0, 7)
   const note = String(req.body.note || "").trim()
+  const creditor = String(req.body.creditor || req.body.creditor_name || "").trim()
 
   if (!person || !title || Number.isNaN(amount) || !/^\d{4}-\d{2}$/.test(month)) {
     return res.status(400).json({ error: "Invalid due item" })
   }
 
   const [result] = await db.query(`
-    INSERT INTO dues (user_id, person_name, title, amount, due_month, status, note)
-    VALUES (?, ?, ?, ?, ?, 'unpaid', ?)
-  `, [req.user.id, person, title, amount, month, note || null])
+    INSERT INTO dues (user_id, created_by_user_id, created_by_name, person_name, creditor_name, title, amount, due_month, status, note, source, approval_status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, 'web', 'approved')
+  `, [req.user.id, req.user.id, req.user.name || null, person, creditor || null, title, amount, month, note || null])
 
   const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [result.insertId, req.user.id])
   res.json(mapDue(rows[0]))
@@ -1591,6 +1843,248 @@ app.post("/pay/:token/items/:id/slip", upload.single("slip"), async (req, res) =
 })
 
 // ── SCAN ──────────────────────────────────────────────────────
+// TELEGRAM
+async function handleTelegramConnect(context, token) {
+  if (!token) return "Use /connect <token> from your Harbill account."
+
+  const [tokenRows] = await db.query(`
+    SELECT t.*, u.name, u.email
+    FROM telegram_connect_tokens t
+    JOIN users u ON u.id=t.user_id
+    WHERE t.token=? AND t.used_at IS NULL AND t.expires_at > NOW()
+    LIMIT 1
+  `, [token])
+  const row = tokenRows[0]
+  if (!row) return "This connect token is invalid or expired."
+
+  const chatTitle = context.chat.title || context.chat.username || context.chat.first_name || String(context.chatId)
+  const [chatRows] = await db.query("SELECT * FROM telegram_chats WHERE chat_id=?", [context.chatId])
+  const existingChat = chatRows[0]
+  const ownerUserId = existingChat?.user_id || row.user_id
+
+  if (!existingChat) {
+    await db.query(
+      "INSERT INTO telegram_chats (chat_id, user_id, title, type) VALUES (?, ?, ?, ?)",
+      [context.chatId, row.user_id, chatTitle, context.chat.type || null]
+    )
+  } else {
+    await db.query(
+      "UPDATE telegram_chats SET title=?, type=?, enabled=1 WHERE chat_id=?",
+      [chatTitle, context.chat.type || null, context.chatId]
+    )
+  }
+
+  const [memberCountRows] = await db.query("SELECT COUNT(*) total FROM telegram_members WHERE chat_id=?", [context.chatId])
+  const isFirstMember = Number(memberCountRows[0]?.total || 0) === 0
+  const role = isFirstMember || Number(ownerUserId) === Number(row.user_id) || telegramAdminIds().includes(context.telegramUserId)
+    ? "admin"
+    : "member"
+
+  await upsertTelegramMember({
+    chatId: context.chatId,
+    telegramUserId: context.telegramUserId,
+    userId: row.user_id,
+    friendName: row.name || null,
+    role,
+    username: context.from.username || null,
+    displayName: telegramName(context.from)
+  })
+  await db.query("INSERT IGNORE INTO friends (user_id, name) VALUES (?, ?)", [ownerUserId, row.name || row.email || `tg-${context.telegramUserId}`])
+  await db.query("UPDATE telegram_connect_tokens SET used_at=NOW() WHERE token=?", [token])
+
+  return `Connected ${row.name || row.email} as ${role}.`
+}
+
+async function handleTelegramAdd(context, body) {
+  if (!context.linkedChat) return "This chat is not connected. Use /connect from Harbill first."
+  if (!context.member?.user_id) return "Please connect your Google account before creating items."
+
+  const parsed = parseTelegramAdd(body)
+  if (!parsed) {
+    return [
+      "Invalid add command.",
+      "Example: /add Dinner 900 by Bee split Me,A,C month 2026-07"
+    ].join("\n")
+  }
+
+  const divisor = parsed.splitWith.length
+  const debtors = parsed.splitWith.filter(name => name !== parsed.creditor)
+  if (debtors.length === 0) return "No debtor to charge after excluding the payer."
+
+  const share = Math.round((parsed.amount / divisor) * 100) / 100
+  const createdIds = []
+  for (const person of debtors) {
+    await db.query("INSERT IGNORE INTO friends (user_id, name) VALUES (?, ?)", [context.ownerUserId, person])
+    const [result] = await db.query(`
+      INSERT INTO dues (
+        user_id, created_by_user_id, created_by_telegram_id, created_by_name,
+        person_name, creditor_name, title, amount, due_month, status, note,
+        source, approval_status, telegram_chat_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, 'telegram', 'approved', ?)
+    `, [
+      context.ownerUserId,
+      context.member.user_id,
+      context.telegramUserId,
+      context.member.friend_name || telegramName(context.from),
+      person,
+      parsed.creditor,
+      parsed.title,
+      share,
+      parsed.month,
+      `Original amount ${parsed.amount}; split ${divisor} ways`,
+      context.chatId
+    ])
+    createdIds.push(result.insertId)
+  }
+
+  const reply = [
+    `Added ${parsed.title} ${parsed.amount.toFixed(2)}`,
+    `Paid by: ${parsed.creditor}`,
+    `Split: ${divisor} ways, ${share.toFixed(2)} each`,
+    `Created dues: ${createdIds.map(id => `#${id}`).join(", ")}`
+  ].join("\n")
+  const sent = await sendTelegramMessage(context.chatId, reply)
+  if (sent?.message_id) {
+    await db.query(
+      `UPDATE dues SET telegram_message_id=? WHERE id IN (${createdIds.map(() => "?").join(",")}) AND user_id=?`,
+      [String(sent.message_id), ...createdIds, context.ownerUserId]
+    )
+    return null
+  }
+  return reply
+}
+
+async function handleTelegramEdit(context, args) {
+  if (!context.linkedChat) return "This chat is not connected."
+  const id = Number(args[0])
+  const field = String(args[1] || "").toLowerCase()
+  const value = args.slice(2).join(" ").trim()
+  if (!id || !field || !value) return "Use /edit <id> amount|title|person|creditor|month <value>."
+
+  const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [id, context.ownerUserId])
+  const due = rows[0]
+  if (!due) return `Due #${id} was not found.`
+  if (!await telegramCanManageDue(context, due)) return "Only the creator or an admin can edit this due."
+
+  const updates = []
+  const values = []
+  if (field === "amount") {
+    const amount = Number(value.replace(/,/g, ""))
+    if (!Number.isFinite(amount) || amount <= 0) return "Invalid amount."
+    updates.push("amount=?")
+    values.push(amount)
+  } else if (field === "title") {
+    updates.push("title=?")
+    values.push(value)
+  } else if (field === "person") {
+    updates.push("person_name=?")
+    values.push(value)
+  } else if (field === "creditor" || field === "payto") {
+    updates.push("creditor_name=?")
+    values.push(value)
+  } else if (field === "month") {
+    if (!/^\d{4}-\d{2}$/.test(value)) return "Month must be YYYY-MM."
+    updates.push("due_month=?")
+    values.push(value)
+  } else {
+    return "Editable fields: amount, title, person, creditor, month."
+  }
+
+  await db.query(`UPDATE dues SET ${updates.join(", ")} WHERE id=? AND user_id=?`, [...values, id, context.ownerUserId])
+  return `Updated #${id}.`
+}
+
+async function handleTelegramPaid(context, args) {
+  if (!context.linkedChat) return "This chat is not connected."
+  const id = Number(args[0])
+  if (!id) return "Use /paid <id>."
+
+  const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [id, context.ownerUserId])
+  const due = rows[0]
+  if (!due) return `Due #${id} was not found.`
+  if (!await telegramCanManageDue(context, due)) return "Only the creator or an admin can mark this due as paid."
+
+  await db.query("UPDATE dues SET status='paid', paid_at=NOW() WHERE id=? AND user_id=?", [id, context.ownerUserId])
+  return `Marked #${id} as paid.`
+}
+
+async function handleTelegramList(context, args) {
+  if (!context.linkedChat) return "This chat is not connected."
+  const month = /^\d{4}-\d{2}$/.test(args[0] || "") ? args[0] : currentBangkokMonth()
+  const clauses = ["user_id=?", "due_month=?"]
+  const values = [context.ownerUserId, month]
+
+  if (!context.isAdmin) {
+    clauses.push("(person_name=? OR created_by_user_id=? OR created_by_telegram_id=?)")
+    values.push(context.member?.friend_name || "", context.member?.user_id || 0, context.telegramUserId)
+  }
+
+  const [rows] = await db.query(`
+    SELECT *
+    FROM dues
+    WHERE ${clauses.join(" AND ")}
+    ORDER BY status ASC, person_name ASC, created_at DESC
+    LIMIT 20
+  `, values)
+
+  if (rows.length === 0) return `No dues for ${month}.`
+  return [
+    `Dues for ${month}`,
+    ...rows.map(row => `#${row.id} ${row.person_name} -> ${row.creditor_name || "owner"} ${Number(row.amount).toFixed(2)} ${row.status} (${row.title})`)
+  ].join("\n")
+}
+
+app.post("/telegram/webhook", async (req, res) => {
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET
+  if (secret) {
+    const provided = String(req.headers["x-telegram-bot-api-secret-token"] || req.headers["x-telegram-secret"] || req.query.secret || "")
+    if (provided !== secret) return res.status(401).json({ error: "Unauthorized" })
+  }
+
+  const message = req.body?.message || req.body?.edited_message || req.body?.callback_query?.message
+  const text = req.body?.message?.text || req.body?.edited_message?.text || req.body?.callback_query?.data || ""
+  if (!message || !text) return res.json({ ok: true })
+
+  const context = await getTelegramContext(message)
+  if (!context || context.blocked) {
+    if (context?.chatId) await sendTelegramMessage(context.chatId, context.reason || "This chat is not allowed.")
+    return res.json({ ok: true })
+  }
+
+  const { command, args, body } = parseTelegramText(text)
+  let reply = null
+
+  try {
+    if (command === "/start" || command === "/help") {
+      reply = [
+        "Harbill commands:",
+        "/connect <token>",
+        "/add Dinner 900 by Bee split Me,A,C month 2026-07",
+        "/edit <id> amount 450",
+        "/paid <id>",
+        "/list 2026-07"
+      ].join("\n")
+    } else if (command === "/connect") {
+      reply = await handleTelegramConnect(context, args[0])
+    } else if (command === "/add" || command === "/เพิ่ม") {
+      reply = await handleTelegramAdd(context, body)
+    } else if (command === "/edit" || command === "/แก้") {
+      reply = await handleTelegramEdit(context, args)
+    } else if (command === "/paid" || command === "/จ่ายแล้ว") {
+      reply = await handleTelegramPaid(context, args)
+    } else if (command === "/list" || command === "/รายการ") {
+      reply = await handleTelegramList(context, args)
+    }
+  } catch (err) {
+    console.error("Telegram webhook failed:", err)
+    reply = "Sorry, Harbill could not process that command."
+  }
+
+  if (reply) await sendTelegramMessage(context.chatId, reply)
+  res.json({ ok: true })
+})
+
 app.post("/billing/scan-credits/webhook", async (req, res) => {
   const secret = process.env.PAYMENT_WEBHOOK_SECRET
   if (!secret || req.headers["x-webhook-secret"] !== secret) {

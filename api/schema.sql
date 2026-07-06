@@ -86,12 +86,20 @@ CREATE TABLE IF NOT EXISTS payment_info (
 CREATE TABLE IF NOT EXISTS dues (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
+  created_by_user_id INT NULL,
+  created_by_telegram_id VARCHAR(64) NULL,
+  created_by_name VARCHAR(255) NULL,
   person_name VARCHAR(255) NOT NULL,
+  creditor_name VARCHAR(255) NULL,
   title VARCHAR(255) NOT NULL,
   amount DECIMAL(10,2) NOT NULL,
   due_month CHAR(7) NOT NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'unpaid',
   note TEXT NULL,
+  source VARCHAR(32) NOT NULL DEFAULT 'web',
+  approval_status VARCHAR(32) NOT NULL DEFAULT 'approved',
+  telegram_chat_id VARCHAR(64) NULL,
+  telegram_message_id VARCHAR(64) NULL,
   due_slip_id INT NULL,
   slip_name VARCHAR(255) NULL,
   slip_type VARCHAR(128) NULL,
@@ -101,7 +109,47 @@ CREATE TABLE IF NOT EXISTS dues (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_dues_user_month (user_id, due_month),
   INDEX idx_dues_user_status (user_id, status),
+  INDEX idx_dues_creator_user (created_by_user_id),
+  INDEX idx_dues_telegram_chat (telegram_chat_id),
   CONSTRAINT fk_dues_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS telegram_chats (
+  chat_id VARCHAR(64) PRIMARY KEY,
+  user_id INT NOT NULL,
+  title VARCHAR(255) NULL,
+  type VARCHAR(32) NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_telegram_chats_user_id (user_id),
+  CONSTRAINT fk_telegram_chats_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS telegram_members (
+  chat_id VARCHAR(64) NOT NULL,
+  telegram_user_id VARCHAR(64) NOT NULL,
+  user_id INT NULL,
+  friend_name VARCHAR(255) NULL,
+  role VARCHAR(32) NOT NULL DEFAULT 'member',
+  username VARCHAR(255) NULL,
+  display_name VARCHAR(255) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (chat_id, telegram_user_id),
+  INDEX idx_telegram_members_user_id (user_id),
+  INDEX idx_telegram_members_username (chat_id, username),
+  CONSTRAINT fk_telegram_members_chat FOREIGN KEY (chat_id) REFERENCES telegram_chats(chat_id) ON DELETE CASCADE,
+  CONSTRAINT fk_telegram_members_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS telegram_connect_tokens (
+  token VARCHAR(64) PRIMARY KEY,
+  user_id INT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_telegram_connect_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS due_slips (

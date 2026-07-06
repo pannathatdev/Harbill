@@ -105,6 +105,9 @@ export const api = {
   googleLogin: () => { window.location.href = `${BASE}/auth/google` },
   clearCache: clearApiCache,
 
+  // Telegram
+  createTelegramConnectToken: () => post("/telegram/connect-token", {}),
+
   // Analytics / Admin
   trackPageView: (data) => fetch(`${BASE}/analytics/page-view`, {
     method: "POST",

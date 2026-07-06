@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>หารบิล</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;font-size:14px;background:#1a1a1a;color:#e8e8e8;min-height:100vh}
+.app{max-width:520px;margin:0 auto;padding:12px}
+.card{background:#242424;border:0.5px solid #3a3a3a;border-radius:12px;padding:14px;margin-bottom:10px}
+.sec-label{font-size:11px;color:#888;font-weight:500;margin-bottom:8px;letter-spacing:.4px}
+.pill{display:inline-flex;align-items:center;gap:4px;border-radius:20px;padding:4px 11px;font-size:12px;margin:3px;cursor:pointer;border:0.5px solid #3a3a3a;background:#2e2e2e;color:#e8e8e8;user-select:none}
+.pill.sel{background:#3d3882;border-color:#7f77dd;color:#c4c0ff}
+.pill.skip{background:#4a1f0e;border-color:#993c1d;color:#ffb59a}
+input,select,textarea{width:100%;padding:7px 10px;border:0.5px solid #3a3a3a;border-radius:8px;background:#2e2e2e;color:#e8e8e8;font-size:13px;font-family:inherit;outline:none}
+input:focus,select:focus,textarea:focus{border-color:#7f77dd}
+textarea{resize:none;line-height:1.5}
+.row{display:flex;gap:8px;align-items:center}
+.btn{padding:7px 14px;border:0.5px solid #4a4a4a;border-radius:8px;background:transparent;color:#e8e8e8;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.btn:hover{background:#2e2e2e}
+.btn.p{background:#7f77dd;color:#fff;border-color:#7f77dd}
+.btn.p:hover{background:#534ab7}
+.btn.g{background:#1d9e75;color:#fff;border-color:#1d9e75}
+.btn.g:hover{background:#0f6e56}
+.btn.r{background:#993c1d;color:#fff;border-color:#993c1d}
+.btn.r:hover{background:#712b13}
+.btn.full{width:100%;margin-top:8px;text-align:center}
+.btn.sm{padding:4px 9px;font-size:11px}
+.tab-bar{display:flex;gap:5px;margin-bottom:10px;flex-wrap:wrap}
+.tab{padding:6px 13px;border-radius:20px;border:0.5px solid #3a3a3a;background:transparent;cursor:pointer;font-size:12px;color:#888;font-family:inherit}
+.tab.on{background:#7f77dd;color:#fff;border-color:#7f77dd}
+.exp-row{display:flex;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:0.5px solid #333}
+.exp-row:last-child{border-bottom:none}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{background:#2e2e2e;border-radius:8px;padding:10px 12px}
+.stat-lbl{font-size:11px;color:#888}
+.stat-val{font-size:20px;font-weight:500;margin-top:2px}
+.prow{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#2e2e2e;border-radius:8px;margin-bottom:6px;font-size:13px}
+.badge{font-size:11px;padding:2px 9px;border-radius:20px}
+.badge.g{background:#0a3326;color:#6ee0b8}
+.badge.r{background:#4a1f0e;color:#ffb59a}
+.badge.n{background:#333;color:#888;border:0.5px solid #3a3a3a}
+.sep{height:0.5px;background:#333;margin:10px 0}
+.transfer-row{display:flex;justify-content:space-between;align-items:center;padding:9px 10px;background:#2e2e2e;border-radius:8px;margin-bottom:6px;font-size:13px;gap:8px}
+.ai-box{background:#2a2845;border:0.5px solid #534ab7;border-radius:8px;padding:10px 12px;font-size:13px;color:#c4c0ff;line-height:1.6;margin-top:8px;white-space:pre-wrap}
+.ai-label{font-size:11px;color:#9b93ff;font-weight:500;margin-bottom:4px}
+.loading{display:inline-block;width:12px;height:12px;border:2px solid #534ab7;border-top-color:#c4c0ff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:5px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hist-card{border:0.5px solid #3a3a3a;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+.hist-card:hover{background:#2e2e2e}
+.slip-preview{background:#2e2e2e;border-radius:8px;padding:10px;font-size:12px;line-height:1.8;white-space:pre-wrap;font-family:monospace}
+.member-row{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:8px;background:#2e2e2e;margin-bottom:5px;font-size:13px}
+.notice{font-size:12px;color:#666;padding:14px;text-align:center}
+.tag-api-status{font-size:11px;padding:2px 8px;border-radius:20px;margin-left:6px}
+.tag-api-status.ok{background:#0a3326;color:#6ee0b8}
+.tag-api-status.err{background:#4a1f0e;color:#ffb59a}
+select option{background:#2e2e2e}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <div style="font-weight:600;font-size:16px">หารบิล 💸</div>
+    <div>
+      <span id="api-status" class="tag-api-status err">DB ไม่เชื่อมต่อ</span>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab on" onclick="goTab('friends')">เพื่อน</button>
+    <button class="tab" onclick="goTab('expenses')">รายการ</button>
+    <button class="tab" onclick="goTab('summary')">สรุปยอด</button>
+    <button class="tab" onclick="goTab('slip')">อัปสลิป</button>
+    <button class="tab" onclick="goTab('history')">ประวัติ</button>
+  </div>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- TAB: FRIENDS                                 -->
+  <!-- ════════════════════════════════════════════ -->
+  <div id="t-friends">
+    <div class="card">
+      <div class="sec-label">เพิ่มเพื่อน</div>
+      <div class="row" style="margin-bottom:8px">
+        <input type="text" id="fi-name" placeholder="ชื่อ..." style="flex:2" onkeydown="if(event.key==='Enter')addFriend()">
+        <input type="text" id="fi-pp" placeholder="พร้อมเพย์/เบอร์" style="flex:2">
+        <button class="btn p" onclick="addFriend()">+ เพิ่ม</button>
+      </div>
+      <div id="friend-list"><div class="notice">กำลังโหลด...</div></div>
+    </div>
+    <div class="card">
+      <div class="sec-label">เลือกคนที่ร่วมรอบนี้</div>
+      <div style="font-size:12px;color:#888;margin-bottom:8px">
+        แตะ 1 ครั้ง = <span style="color:#c4c0ff">ร่วมหาร</span> &nbsp;·&nbsp;
+        แตะ 2 ครั้ง = <span style="color:#ffb59a">มาแต่ไม่หาร</span> &nbsp;·&nbsp;
+        แตะ 3 ครั้ง = ไม่มา
+      </div>
+      <div id="round-members"><div class="notice">ยังไม่มีเพื่อน</div></div>
+      <div class="sep"></div>
+      <input type="text" id="round-name" placeholder="ชื่อรอบนี้ เช่น ข้าวเที่ยง, ทริปเขาใหญ่..." style="margin-bottom:8px">
+      <button class="btn g full" onclick="startRound()">เริ่มรอบนี้ →</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- TAB: EXPENSES                               -->
+  <!-- ════════════════════════════════════════════ -->
+  <div id="t-expenses" style="display:none">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-weight:600;font-size:15px" id="exp-round-name"></div>
+          <div id="active-members-display" style="margin-top:6px"></div>
+          <div id="skip-display" style="margin-top:4px"></div>
+        </div>
+        <button class="btn sm" onclick="goTab('friends')">แก้ไข</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="sec-label">เพิ่มรายการ</div>
+
+      <!-- AI Input -->
+      <div id="ai-input-area">
+        <div class="ai-label">✦ AI ช่วยเพิ่มรายการ</div>
+        <textarea id="ai-input" rows="2" placeholder="เช่น ข้าวเที่ยง 320 หน่อยจ่าย แบ่งกัน 4 คน ยกเว้นโบ"></textarea>
+        <div class="row" style="margin-top:6px">
+          <button class="btn p" style="flex:1" onclick="runAI()">✦ สร้างรายการ</button>
+          <button class="btn sm" onclick="swMode('manual')">กรอกเอง</button>
+        </div>
+        <div id="ai-result" style="display:none"></div>
+      </div>
+
+      <!-- Manual Input -->
+      <div id="manual-input-area" style="display:none">
+        <input type="text" id="ei-name" placeholder="ชื่อรายการ..." style="margin-bottom:8px">
+        <div class="row" style="margin-bottom:8px">
+          <input type="number" id="ei-amount" placeholder="ราคา (฿)" min="0" style="flex:1">
+          <select id="ei-payer" style="flex:1"><option value="">ใครจ่าย?</option></select>
+        </div>
+        <div class="sec-label">VAT / ทิป</div>
+        <div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:10px" id="vat-row">
+          <span class="pill sel" onclick="selVat(this,0)">ไม่มี</span>
+          <span class="pill" onclick="selVat(this,7)">+VAT 7%</span>
+          <span class="pill" onclick="selVat(this,10)">+ทิป 10%</span>
+          <span class="pill" onclick="selVat(this,15)">+ทิป 15%</span>
+        </div>
+        <div class="sec-label">หารกับใคร <span style="font-weight:400;color:#888">(ไม่เลือก = ทุกคน)</span></div>
+        <div id="split-tags" style="margin-bottom:8px"></div>
+        <div class="row">
+          <button class="btn p" style="flex:1" onclick="addExpenseManual()">+ เพิ่ม</button>
+          <button class="btn sm" onclick="swMode('ai')">AI ✦</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="sec-label">รายการทั้งหมด</div>
+      <div id="exp-list"><div class="notice">ยังไม่มีรายการ</div></div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- TAB: SUMMARY                                -->
+  <!-- ════════════════════════════════════════════ -->
+  <div id="t-summary" style="display:none">
+    <div class="card">
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-lbl">รวมทั้งหมด</div><div class="stat-val" id="s-total">฿0</div></div>
+        <div class="stat"><div class="stat-lbl">รายการ</div><div class="stat-val" id="s-count">0</div></div>
+        <div class="stat"><div class="stat-lbl">จำนวนคน</div><div class="stat-val" id="s-ppl">0</div></div>
+        <div class="stat"><div class="stat-lbl">เฉลี่ย/คน</div><div class="stat-val" id="s-avg">฿0</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="sec-label">แต่ละคนต้องจ่าย</div>
+      <div id="per-person"><div class="notice">เพิ่มรายการก่อน</div></div>
+    </div>
+    <div class="card">
+      <div class="sec-label">ใครโอนให้ใคร</div>
+      <div id="settle"><div class="notice">ยังไม่มีการโอนเงิน</div></div>
+    </div>
+    <div class="card">
+      <div class="sec-label">ข้อความสำหรับกลุ่ม</div>
+      <div id="fb-post" class="slip-preview" style="margin-bottom:8px"></div>
+      <div class="row">
+        <button class="btn p" style="flex:1" onclick="copyMsg()">คัดลอก</button>
+        <button class="btn g" style="flex:1" onclick="saveRound()">บันทึกรอบนี้</button>
+      </div>
+      <div id="save-ok"  style="display:none;text-align:center;margin-top:6px;font-size:12px;color:#6ee0b8">บันทึกแล้ว ✓</div>
+      <div id="copy-ok"  style="display:none;text-align:center;margin-top:6px;font-size:12px;color:#6ee0b8">คัดลอกแล้ว ✓</div>
+      <div id="save-err" style="display:none;text-align:center;margin-top:6px;font-size:12px;color:#ffb59a"></div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- TAB: SLIP                                   -->
+  <!-- ════════════════════════════════════════════ -->
+  <div id="t-slip" style="display:none">
+    <div class="card">
+      <div class="sec-label">อัปสลิปใบเสร็จ</div>
+      <div style="font-size:12px;color:#888;margin-bottom:10px">AI จะอ่านรายการจากรูปใบเสร็จ แล้วแจกแจงค่าอาหารแต่ละเมนูให้อัตโนมัติ</div>
+      <div style="margin-bottom:8px">
+        <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">รูปใบเสร็จ</label>
+        <input type="file" id="slip-file" accept="image/*" onchange="previewSlip(this)">
+        <div id="slip-img-preview" style="margin-top:8px;display:none">
+          <img id="slip-img" style="max-width:100%;border-radius:8px;border:0.5px solid #3a3a3a">
+        </div>
+      </div>
+      <div class="sec-label">ใครสั่งอะไร? <span style="font-weight:400;color:#888">(ไม่บังคับ — ช่วย AI แจกแจงได้แม่นขึ้น)</span></div>
+      <textarea id="slip-hint" rows="3" placeholder="เช่น หน่อยสั่งผัดกะเพรา + ข้าว, โบสั่งต้มยำกุ้ง, เบียร์หารทุกคน, ส้มตำหน่อยกับโบ..."></textarea>
+      <button class="btn p full" onclick="runSlipAI()">✦ วิเคราะห์ใบเสร็จ</button>
+      <div id="slip-result" style="display:none;margin-top:10px"></div>
+    </div>
+    <div class="card" id="slip-items-card" style="display:none">
+      <div class="sec-label">รายการจากใบเสร็จ — ตรวจสอบก่อนเพิ่ม</div>
+      <div id="slip-items"></div>
+      <button class="btn g full" onclick="addAllSlipItems()">+ เพิ่มทุกรายการในรอบนี้</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- TAB: HISTORY                                -->
+  <!-- ════════════════════════════════════════════ -->
+  <div id="t-history" style="display:none">
+    <div class="card">
+      <div class="sec-label">ประวัติรอบที่ผ่านมา</div>
+      <div id="hist-list"><div class="notice">กำลังโหลด...</div></div>
+    </div>
+    <div id="hist-detail" style="display:none">
+      <div class="card">
+        <div class="row" style="justify-content:space-between;margin-bottom:10px">
+          <div class="sec-label" style="margin:0" id="hist-detail-title"></div>
+          <button class="btn sm" onclick="closeHistDetail()">ปิด ✕</button>
+        </div>
+        <div id="hist-detail-content"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<script>
+// ─── Config ───────────────────────────────────────────────────────
+const API = 'http://localhost:8000/api';  // เปลี่ยน port ตาม Laragon ของคุณ
+const AI_KEY = '';                        // ไม่ต้องใส่ — ระบบจัดการให้
+
+// ─── State ────────────────────────────────────────────────────────
+let friends      = [];   // จาก DB
+let roundMembers = [];   // name[]  ที่เลือกมารอบนี้
+let skipped      = [];   // name[]  มาแต่ไม่หาร
+let expenses     = [];   // รายการในรอบปัจจุบัน
+let roundName    = '';
+let curVat       = 0;
+let splitSel     = [];
+let slipParsed   = [];
+
+// ─── API helpers ──────────────────────────────────────────────────
+async function api(method, path, body) {
+  try {
+    const res = await fetch(API + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  } catch (e) {
+    setApiStatus(false);
+    throw e;
+  }
+}
+
+function setApiStatus(ok) {
+  const el = document.getElementById('api-status');
+  el.textContent = ok ? 'DB เชื่อมต่อแล้ว' : 'DB ไม่เชื่อมต่อ';
+  el.className = 'tag-api-status ' + (ok ? 'ok' : 'err');
+}
+
+// ─── Friends ──────────────────────────────────────────────────────
+async function loadFriends() {
+  try {
+    friends = await api('GET', '/friends');
+    setApiStatus(true);
+  } catch {
+    friends = JSON.parse(localStorage.getItem('bs_friends_cache') || '[]');
+  }
+  localStorage.setItem('bs_friends_cache', JSON.stringify(friends));
+  renderFriends();
+  renderRoundMembers();
+}
+
+function renderFriends() {
+  const el = document.getElementById('friend-list');
+  if (!friends.length) { el.innerHTML = '<div class="notice">ยังไม่มีเพื่อน</div>'; return; }
+  el.innerHTML = friends.map(f =>
+    `<div class="member-row">
+      <div>
+        <span style="font-weight:500">${f.name}</span>
+        ${f.promptpay ? `<span style="font-size:11px;color:#888;margin-left:8px">📱 ${f.promptpay}</span>` : ''}
+      </div>
+      <button class="btn sm r" onclick="removeFriend(${f.id},'${f.name}')">ลบ</button>
+    </div>`
+  ).join('');
+}
+
+async function addFriend() {
+  const name      = document.getElementById('fi-name').value.trim();
+  const promptpay = document.getElementById('fi-pp').value.trim();
+  if (!name) return;
+  try {
+    const f = await api('POST', '/friends', { name, promptpay: promptpay || null });
+    friends.push(f);
+    document.getElementById('fi-name').value = '';
+    document.getElementById('fi-pp').value = '';
+    localStorage.setItem('bs_friends_cache', JSON.stringify(friends));
+    renderFriends(); renderRoundMembers();
+  } catch (e) { alert('เพิ่มไม่สำเร็จ: ' + e.message); }
+}
+
+async function removeFriend(id, name) {
+  if (!confirm(`ลบ ${name} ออกจากรายชื่อเพื่อน?`)) return;
+  try {
+    await api('DELETE', `/friends/${id}`);
+    friends = friends.filter(f => f.id !== id);
+    roundMembers = roundMembers.filter(x => x !== name);
+    skipped = skipped.filter(x => x !== name);
+    localStorage.setItem('bs_friends_cache', JSON.stringify(friends));
+    renderFriends(); renderRoundMembers();
+  } catch (e) { alert('ลบไม่สำเร็จ: ' + e.message); }
+}
+
+// ─── Round members selector ───────────────────────────────────────
+function renderRoundMembers() {
+  const el = document.getElementById('round-members');
+  if (!friends.length) { el.innerHTML = '<div class="notice">เพิ่มเพื่อนก่อน</div>'; return; }
+  el.innerHTML = friends.map(f => {
+    const inRound  = roundMembers.includes(f.name);
+    const isSkip   = skipped.includes(f.name);
+    const cls  = inRound ? (isSkip ? 'skip' : 'sel') : '';
+    const hint = inRound ? (isSkip ? ' (ไม่หาร)' : ' ✓') : '';
+    return `<span class="pill ${cls}" onclick="toggleMember('${f.name}')">${f.name}<small style="opacity:.7">${hint}</small></span>`;
+  }).join('');
+}
+
+function toggleMember(name) {
+  if (!roundMembers.includes(name)) {
+    roundMembers.push(name);                          // ครั้งที่ 1: ร่วมหาร
+  } else if (!skipped.includes(name)) {
+    skipped.push(name);                               // ครั้งที่ 2: มาแต่ไม่หาร
+  } else {
+    roundMembers = roundMembers.filter(x => x !== name); // ครั้งที่ 3: ไม่มา
+    skipped      = skipped.filter(x => x !== name);
+  }
+  renderRoundMembers();
+}
+
+function getActive() {
+  return roundMembers.filter(m => !skipped.includes(m));
+}
+
+function startRound() {
+  const active = getActive();
+  if (active.length < 2) { alert('เลือกคนที่ร่วมหารอย่างน้อย 2 คน'); return; }
+  expenses = []; splitSel = [];
+  roundName = document.getElementById('round-name').value.trim()
+    || ('รอบ ' + new Date().toLocaleDateString('th-TH', {day:'numeric',month:'short'}));
+  goTab('expenses');
+}
+
+// ─── Expense UI ───────────────────────────────────────────────────
+function renderExpenseUI() {
+  const active = getActive();
+  document.getElementById('exp-round-name').textContent = roundName;
+  document.getElementById('active-members-display').innerHTML = active.map(n =>
+    `<span class="pill sel" style="margin-bottom:2px">${n}</span>`).join('');
+  const sd = document.getElementById('skip-display');
+  sd.innerHTML = skipped.length
+    ? '<small style="color:#ffb59a">ไม่หาร: </small>' + skipped.map(n => `<span class="pill skip">${n}</span>`).join('')
+    : '';
+  const payer = document.getElementById('ei-payer');
+  const prev  = payer.value;
+  payer.innerHTML = '<option value="">ใครจ่าย?</option>' + active.map(n =>
+    `<option ${n === prev ? 'selected' : ''}>${n}</option>`).join('');
+  document.getElementById('split-tags').innerHTML = active.map(n =>
+    `<span class="pill ${splitSel.includes(n)?'sel':''}" onclick="togSplit('${n}')">${n}</span>`).join('');
+}
+
+function togSplit(n) {
+  splitSel = splitSel.includes(n) ? splitSel.filter(x => x !== n) : [...splitSel, n];
+  renderExpenseUI();
+}
+
+function selVat(el, v) {
+  curVat = v;
+  document.querySelectorAll('#vat-row .pill').forEach(p => p.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function swMode(mode) {
+  document.getElementById('ai-input-area').style.display     = mode === 'ai' ? '' : 'none';
+  document.getElementById('manual-input-area').style.display = mode === 'manual' ? '' : 'none';
+  if (mode === 'manual') renderExpenseUI();
+}
+
+function pushExpense(obj) {
+  const active = getActive();
+  const payer  = obj.payer || '';
+  let sw = obj.splitWith && obj.splitWith.length ? [...obj.splitWith] : [...active];
+  if (payer && !sw.includes(payer) && active.includes(payer)) sw.push(payer);
+  const amount = (obj.amount) * (1 + (obj.vat||0)/100);
+  expenses.push({ name: obj.name, raw: obj.amount, amount, payer, splitWith: sw, vat: obj.vat||0 });
+  renderExpList();
+}
+
+function addExpenseManual() {
+  const name   = document.getElementById('ei-name').value.trim();
+  const raw    = parseFloat(document.getElementById('ei-amount').value);
+  const payer  = document.getElementById('ei-payer').value;
+  if (!name || !raw || !payer) { alert('กรุณากรอกข้อมูลให้ครบ'); return; }
+  const active = getActive();
+  const sw     = splitSel.length ? [...splitSel] : [...active];
+  if (!sw.includes(payer)) sw.push(payer);
+  const amount = raw * (1 + curVat/100);
+  expenses.push({ name, raw, amount, payer, splitWith: sw, vat: curVat });
+  document.getElementById('ei-name').value = '';
+  document.getElementById('ei-amount').value = '';
+  splitSel = [];
+  renderExpenseUI();
+  renderExpList();
+}
+
+function renderExpList() {
+  const el = document.getElementById('exp-list');
+  if (!expenses.length) { el.innerHTML = '<div class="notice">ยังไม่มีรายการ</div>'; return; }
+  el.innerHTML = expenses.map((e, i) =>
+    `<div class="exp-row">
+      <div style="flex:1">
+        <div style="font-weight:500">${e.name}</div>
+        <div style="font-size:11px;color:#888">จ่าย: ${e.payer||'?'} · หาร: ${e.splitWith.join(', ')}${e.vat?' · +'+e.vat+'%':''}</div>
+      </div>
+      <div style="font-weight:500;margin-right:8px;white-space:nowrap">฿${e.amount.toFixed(2)}</div>
+      <button class="btn sm r" onclick="delExp(${i})">ลบ</button>
+    </div>`).join('');
+}
+
+function delExp(i) { expenses.splice(i, 1); renderExpList(); }
+
+// ─── Balance Calculation ──────────────────────────────────────────
+function calcBalance() {
+  const active = getActive();
+  const bal = {};
+  active.forEach(m => bal[m] = 0);
+  expenses.forEach(e => {
+    if (e.payer) { if (!(e.payer in bal)) bal[e.payer] = 0; bal[e.payer] += e.amount; }
+    const share = e.amount / e.splitWith.length;
+    e.splitWith.forEach(m => { if (!(m in bal)) bal[m] = 0; bal[m] -= share; });
+  });
+  return bal;
+}
+
+function calcTransfers(bal) {
+  const d  = Object.entries(bal).filter(([,b]) => b < -0.01).map(([n,b]) => ({ n, a: -b }));
+  const c  = Object.entries(bal).filter(([,b]) => b >  0.01).map(([n,b]) => ({ n, a:  b }));
+  const tf = [];
+  const dd = d.map(x=>({...x})), cc = c.map(x=>({...x}));
+  let di=0, ci=0;
+  while (di < dd.length && ci < cc.length) {
+    const pay = Math.min(dd[di].a, cc[ci].a);
+    tf.push({ from: dd[di].n, to: cc[ci].n, a: pay });
+    dd[di].a -= pay; cc[ci].a -= pay;
+    if (dd[di].a < 0.01) di++;
+    if (cc[ci].a < 0.01) ci++;
+  }
+  return tf;
+}
+
+// ─── Summary Tab ──────────────────────────────────────────────────
+function calcSummary() {
+  const total  = expenses.reduce((s,e) => s+e.amount, 0);
+  const active = getActive();
+  document.getElementById('s-total').textContent = '฿' + total.toFixed(2);
+  document.getElementById('s-count').textContent = expenses.length;
+  document.getElementById('s-ppl').textContent   = active.length;
+  document.getElementById('s-avg').textContent   = active.length ? '฿'+(total/active.length).toFixed(2) : '฿0';
+
+  const bal = calcBalance();
+  document.getElementById('per-person').innerHTML = Object.entries(bal).map(([p,b]) => {
+    const badge = b > 0.01
+      ? `<span class="badge g">รับคืน ฿${b.toFixed(2)}</span>`
+      : b < -0.01
+        ? `<span class="badge r">ต้องจ่าย ฿${Math.abs(b).toFixed(2)}</span>`
+        : `<span class="badge n">เสมอ</span>`;
+    return `<div class="prow"><span>${p}</span>${badge}</div>`;
+  }).join('') || '<div class="notice">เพิ่มรายการก่อน</div>';
+
+  const tf = calcTransfers(bal);
+
+  // หาพร้อมเพย์ของแต่ละคน
+  const ppMap = {};
+  friends.forEach(f => { if (f.promptpay) ppMap[f.name] = f.promptpay; });
+
+  document.getElementById('settle').innerHTML = tf.length
+    ? tf.map(t => `
+        <div class="transfer-row">
+          <div>
+            <span><strong>${t.from}</strong> → <strong>${t.to}</strong></span>
+            ${ppMap[t.to] ? `<div style="font-size:11px;color:#888;margin-top:2px">📱 ${ppMap[t.to]}</div>` : ''}
+          </div>
+          <span style="font-weight:600;color:#6ee0b8;white-space:nowrap">฿${t.a.toFixed(2)}</span>
+        </div>`).join('')
+    : '<div class="notice">ไม่มีการโอนเงิน</div>';
+
+  // สร้างข้อความ
+  let msg = `${roundName}\n${'─'.repeat(30)}\n`;
+  expenses.forEach(e => msg += `• ${e.name}: ฿${e.amount.toFixed(2)} (${e.payer})\n`);
+  msg += `${'─'.repeat(30)}\nรวม: ฿${total.toFixed(2)}\n\nใครโอนให้ใคร:\n`;
+  tf.forEach(t => {
+    msg += `${t.from} → ${t.to}  ฿${t.a.toFixed(2)}`;
+    if (ppMap[t.to]) msg += `  (${ppMap[t.to]})`;
+    msg += '\n';
+  });
+  document.getElementById('fb-post').textContent = msg;
+}
+
+function copyMsg() {
+  navigator.clipboard.writeText(document.getElementById('fb-post').textContent).then(() => {
+    document.getElementById('copy-ok').style.display = '';
+    setTimeout(() => document.getElementById('copy-ok').style.display = 'none', 2500);
+  });
+}
+
+async function saveRound() {
+  if (!expenses.length) { alert('ยังไม่มีรายการ'); return; }
+  const tf  = calcTransfers(calcBalance());
+  const body = {
+    name:      roundName,
+    members:   getActive(),
+    skipped:   [...skipped],
+    expenses:  expenses.map(e => ({
+      name:       e.name,
+      amount:     e.amount,
+      raw_amount: e.raw,
+      vat:        e.vat,
+      payer_name: e.payer,
+      split_with: e.splitWith,
+    })),
+    transfers: tf,
+  };
+  try {
+    await api('POST', '/rounds', body);
+    document.getElementById('save-ok').style.display = '';
+    setTimeout(() => document.getElementById('save-ok').style.display = 'none', 2500);
+  } catch (e) {
+    // fallback: บันทึก localStorage
+    const saved = JSON.parse(localStorage.getItem('bs_history') || '[]');
+    saved.unshift({ ...body, id: Date.now(), date: new Date().toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'numeric'}), total: expenses.reduce((s,x)=>s+x.amount,0), transfers:tf });
+    if (saved.length > 50) saved.length = 50;
+    localStorage.setItem('bs_history', JSON.stringify(saved));
+    document.getElementById('save-ok').style.display = '';
+    document.getElementById('save-err').textContent = '(บันทึกในเครื่องแทน — DB ไม่เชื่อมต่อ)';
+    document.getElementById('save-err').style.display = '';
+    setTimeout(() => { document.getElementById('save-ok').style.display='none'; document.getElementById('save-err').style.display='none'; }, 3000);
+  }
+}
+
+// ─── History Tab ──────────────────────────────────────────────────
+async function loadHistory() {
+  const el = document.getElementById('hist-list');
+  let hist = [];
+  try {
+    hist = await api('GET', '/rounds');
+  } catch {
+    hist = JSON.parse(localStorage.getItem('bs_history') || '[]');
+  }
+  if (!hist.length) { el.innerHTML = '<div class="notice">ยังไม่มีประวัติ</div>'; return; }
+  el.innerHTML = hist.map((h, i) =>
+    `<div class="hist-card" onclick="showHistDetail(${JSON.stringify(h).replace(/"/g,'&quot;')})">
+      <div style="font-weight:500">${h.name}</div>
+      <div style="font-size:11px;color:#888;margin-top:2px">${h.created_at||h.date||''} · ${(h.members||[]).length} คน · ฿${parseFloat(h.total||0).toFixed(2)} · ${(h.expenses||[]).length} รายการ</div>
+    </div>`).join('');
+}
+
+function showHistDetail(h) {
+  if (typeof h === 'string') h = JSON.parse(h);
+  document.getElementById('hist-detail-title').textContent = h.name + ' — ' + (h.created_at||h.date||'');
+  let html = `<div style="margin-bottom:8px">`;
+  (h.members||[]).forEach(m => html += `<span class="pill sel">${m}</span>`);
+  (h.skipped||[]).forEach(m => html += `<span class="pill skip">${m}</span>`);
+  html += `</div>`;
+  (h.expenses||[]).forEach(e => {
+    html += `<div class="exp-row">
+      <div style="flex:1">
+        <div style="font-weight:500">${e.name}</div>
+        <div style="font-size:11px;color:#888">จ่าย: ${e.payer_name||e.payer} · หาร: ${(e.split_with||e.splitWith||[]).join(', ')}</div>
+      </div>
+      <div style="font-weight:500">฿${parseFloat(e.amount).toFixed(2)}</div>
+    </div>`;
+  });
+  html += `<div class="sep"></div><div class="sec-label">ใครโอนให้ใคร</div>`;
+  if ((h.transfers||[]).length) {
+    h.transfers.forEach(t => {
+      html += `<div class="transfer-row">
+        <span>${t.from_name||t.from} → ${t.to_name||t.to}</span>
+        <span style="color:#6ee0b8;font-weight:600">฿${parseFloat(t.amount||t.a).toFixed(2)}</span>
+      </div>`;
+    });
+  } else html += '<div class="notice">ไม่มีการโอนเงิน</div>';
+  if (h.id) {
+    html += `<button class="btn r full" style="margin-top:8px" onclick="delHistory(${h.id})">ลบรอบนี้</button>`;
+  }
+  document.getElementById('hist-detail-content').innerHTML = html;
+  document.getElementById('hist-detail').style.display = '';
+}
+
+function closeHistDetail() { document.getElementById('hist-detail').style.display = 'none'; }
+
+async function delHistory(id) {
+  if (!confirm('ลบประวัติรอบนี้?')) return;
+  try { await api('DELETE', `/rounds/${id}`); } catch {}
+  closeHistDetail();
+  loadHistory();
+}
+
+// ─── AI: Text → Expense ──────────────────────────────────────────
+async function runAI() {
+  const txt    = document.getElementById('ai-input').value.trim();
+  if (!txt) return;
+  const active = getActive();
+  const res    = document.getElementById('ai-result');
+  res.style.display = '';
+  res.innerHTML = '<div class="ai-box"><span class="loading"></span> AI กำลังวิเคราะห์...</div>';
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 800,
+        messages: [{ role: 'user', content:
+          `สมาชิกในรอบ: ${active.join(', ')}\n`+
+          `ข้อความ: "${txt}"\n`+
+          `ตอบ JSON เท่านั้น ไม่มี markdown:\n`+
+          `{"name":"ชื่อรายการ","amount":ตัวเลข,"payer":"ชื่อคนจ่าย","splitWith":["ชื่อ"],"vat":0}`
+        }],
+      }),
+    });
+    const data = await r.json();
+    const t2   = data.content.map(x => x.text||'').join('');
+    try {
+      const obj = JSON.parse(t2.replace(/```json|```/g,'').trim());
+      const safeObj = JSON.stringify(obj).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      res.innerHTML = `<div class="ai-box">${obj.name} — ฿${obj.amount}${obj.vat?' +'+obj.vat+'%':''}<br>`+
+        `จ่าย: ${obj.payer||'?'} | หาร: ${(obj.splitWith||[]).join(', ')||'ทุกคน'}`+
+        `<br><button class="btn g" style="margin-top:8px;width:100%" onclick="applyAI('${safeObj}')">ใช้รายการนี้ ✓</button></div>`;
+    } catch { res.innerHTML = `<div class="ai-box">${t2}</div>`; }
+  } catch (e) { res.innerHTML = `<div class="ai-box">เกิดข้อผิดพลาด: ${e.message}</div>`; }
+}
+
+function applyAI(raw) {
+  const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  pushExpense(obj);
+  document.getElementById('ai-result').style.display = 'none';
+  document.getElementById('ai-input').value = '';
+}
+
+// ─── AI: Slip Image → Expenses ────────────────────────────────────
+function previewSlip(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('slip-img').src = e.target.result;
+    document.getElementById('slip-img-preview').style.display = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function runSlipAI() {
+  const file    = document.getElementById('slip-file').files[0];
+  const hint    = document.getElementById('slip-hint').value;
+  const active  = getActive();
+  const res     = document.getElementById('slip-result');
+  res.style.display = ''; slipParsed = [];
+  document.getElementById('slip-items-card').style.display = 'none';
+  res.innerHTML = '<div class="ai-box"><span class="loading"></span> AI กำลังอ่านใบเสร็จ...</div>';
+
+  let imageData = null, mediaType = 'image/jpeg';
+  if (file) {
+    mediaType = file.type || 'image/jpeg';
+    imageData = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload  = () => resolve(r.result.split(',')[1]);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+
+  const prompt =
+    `สมาชิกในรอบ: ${active.join(', ') || 'ไม่ระบุ'}\n` +
+    (hint ? `ข้อมูลเพิ่มเติม (ใครสั่งอะไร): ${hint}\n` : '') +
+    (imageData ? `วิเคราะห์ใบเสร็จในรูป แจกแจงทุกเมนูพร้อมราคา\n` : `ไม่มีรูป สร้างตัวอย่างรายการแทน\n`) +
+    `ถ้ามีข้อมูลว่าใครสั่งอะไร ให้ระบุ splitWith เป็นชื่อคนนั้น ถ้าไม่มีข้อมูลให้ใส่ทุกคน\n` +
+    `ตอบ JSON array เท่านั้น ไม่มี markdown:\n` +
+    `[{"name":"ชื่อเมนู","amount":ราคาตัวเลข,"payer":"","splitWith":["ชื่อ"],"vat":0}]`;
+
+  try {
+    const msgContent = imageData
+      ? [{ type:'image', source:{ type:'base64', media_type: mediaType, data: imageData } }, { type:'text', text: prompt }]
+      : prompt;
+
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:2000, messages:[{ role:'user', content: msgContent }] }),
+    });
+    const data = await r.json();
+    const txt  = data.content.map(x => x.text||'').join('');
+    try {
+      const arr = JSON.parse(txt.replace(/```json|```/g,'').trim());
+      slipParsed = arr;
+      const total = arr.reduce((s,x) => s+x.amount, 0);
+      res.innerHTML = `<div class="ai-box">พบ ${arr.length} รายการ รวม ฿${total.toFixed(2)}</div>`;
+      document.getElementById('slip-items').innerHTML = arr.map(x =>
+        `<div class="exp-row">
+          <div style="flex:1">
+            <div style="font-weight:500">${x.name}</div>
+            <div style="font-size:11px;color:#888">หาร: ${(x.splitWith||[]).join(', ')||'ทุกคน'}</div>
+          </div>
+          <div style="font-weight:500">฿${x.amount.toFixed(2)}</div>
+        </div>`).join('');
+      document.getElementById('slip-items-card').style.display = '';
+    } catch { res.innerHTML = `<div class="ai-box">${txt}</div>`; }
+  } catch (e) { res.innerHTML = `<div class="ai-box">เกิดข้อผิดพลาด: ${e.message}</div>`; }
+}
+
+function addAllSlipItems() {
+  slipParsed.forEach(x => pushExpense(x));
+  alert(`เพิ่ม ${slipParsed.length} รายการแล้ว`);
+  goTab('expenses');
+}
+
+// ─── Tab Navigation ───────────────────────────────────────────────
+function goTab(t) {
+  ['friends','expenses','summary','slip','history'].forEach(x => {
+    document.getElementById('t-'+x).style.display = x===t ? '' : 'none';
+  });
+  document.querySelectorAll('.tab').forEach((el,i) => {
+    el.classList.toggle('on', ['friends','expenses','summary','slip','history'][i]===t);
+  });
+  if (t==='expenses') renderExpenseUI();
+  if (t==='summary')  calcSummary();
+  if (t==='history')  loadHistory();
+}
+
+// ─── Init ─────────────────────────────────────────────────────────
+loadFriends();
+</script>
+</body>
+</html>
