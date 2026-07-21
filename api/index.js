@@ -547,6 +547,38 @@ async function answerTelegramCallback(callbackQueryId, text = "") {
   }
 }
 
+async function editTelegramMessage(chatId, messageId, text, options = {}) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  if (!token || !chatId || !messageId) return false
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, text, ...options })
+    })
+    return response.ok
+  } catch (err) {
+    console.error("Telegram message edit failed:", err.message)
+    return false
+  }
+}
+
+async function deleteTelegramMessage(chatId, messageId) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  if (!token || !chatId || !messageId) return false
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId })
+    })
+    return response.ok
+  } catch (err) {
+    console.error("Telegram message delete failed:", err.message)
+    return false
+  }
+}
+
 function telegramName(user = {}) {
   return [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || user.username || String(user.id || "")
 }
@@ -1966,6 +1998,22 @@ app.post("/pay/:token/slip", upload.single("slip"), async (req, res) => {
     WHERE user_id=? AND person_name=? AND due_month=? AND status <> 'paid'
   `, [slipId, req.file.originalname, req.file.mimetype, link.user_id, link.person_name, link.due_month])
 
+  const [telegramChats] = await db.query(`
+    SELECT DISTINCT telegram_chat_id
+    FROM dues
+    WHERE user_id=? AND person_name=? AND due_month=? AND telegram_chat_id IS NOT NULL
+  `, [link.user_id, link.person_name, link.due_month])
+  await Promise.all(telegramChats.map(row => sendTelegramMessage(row.telegram_chat_id, [
+    `📎 ${link.person_name} ส่งสลิปแล้ว`,
+    `ยอดรวม ${Number(body.total).toFixed(2)} บาท`,
+    `เดือน ${link.due_month}`,
+    "เจ้าหนี้ตรวจสอบสลิปได้ใน Harbill"
+  ].join("\n"), {
+    reply_markup: {
+      inline_keyboard: [[{ text: "🔎 ตรวจสลิป", url: `${CLIENT_URL}/dues` }]]
+    }
+  })))
+
   const fresh = await publicPaymentPayload(token)
   res.json({ ok: true, ...fresh.body })
 })
@@ -2000,6 +2048,18 @@ app.post("/pay/:token/items/:id/slip", upload.single("slip"), async (req, res) =
     SET status='pending', due_slip_id=?, slip_name=?, slip_type=?, slip_uploaded_at=NOW()
     WHERE id=? AND user_id=?
   `, [slipId, req.file.originalname, req.file.mimetype, due.id, link.user_id])
+
+  if (due.telegram_chat_id) {
+    await sendTelegramMessage(due.telegram_chat_id, [
+      `📎 ${link.person_name} ส่งสลิปแล้ว`,
+      `${due.title} ${Number(due.amount).toFixed(2)} บาท`,
+      "เจ้าหนี้ตรวจสอบสลิปได้ใน Harbill"
+    ].join("\n"), {
+      reply_markup: {
+        inline_keyboard: [[{ text: "🔎 ตรวจสลิป", url: `${CLIENT_URL}/dues` }]]
+      }
+    })
+  }
 
   const fresh = await publicPaymentPayload(token)
   res.json({ ok: true, ...fresh.body })
@@ -2179,6 +2239,7 @@ async function handleTelegramBatchAction(context, action, token) {
 
   const connection = await db.getConnection()
   const createdIds = []
+  const paymentLinks = []
   let confirmedPayload = null
   try {
     await connection.beginTransaction()
@@ -2230,6 +2291,24 @@ async function handleTelegramBatchAction(context, action, token) {
         createdIds.push(result.insertId)
       }
     }
+    const debtorNames = [...new Set(payload.items.flatMap(item => item.allocations.map(allocation => allocation.name)))]
+    for (const person of debtorNames) {
+      const [existingLinks] = await connection.query(
+        "SELECT token FROM due_payment_links WHERE user_id=? AND person_name=? AND due_month=? ORDER BY created_at DESC LIMIT 1",
+        [context.ownerUserId, person, payload.month]
+      )
+      const paymentToken = existingLinks[0]?.token || crypto.randomBytes(18).toString("hex")
+      if (!existingLinks[0]) {
+        await connection.query(
+          "INSERT INTO due_payment_links (token, user_id, person_name, due_month) VALUES (?, ?, ?, ?)",
+          [paymentToken, context.ownerUserId, person, payload.month]
+        )
+      }
+      paymentLinks.push({
+        person,
+        url: `${CLIENT_URL}/pay/${paymentToken}?name=${encodeURIComponent(person)}`
+      })
+    }
     await connection.query("DELETE FROM telegram_due_drafts WHERE token=?", [token])
     await connection.commit()
   } catch (err) {
@@ -2239,12 +2318,43 @@ async function handleTelegramBatchAction(context, action, token) {
     connection.release()
   }
 
-  return [
-    `✅ บันทึก ${confirmedPayload.items.length} รายการเรียบร้อย`,
-    `สร้างยอดติดตาม ${createdIds.length} รายการย่อย`,
+  const debtorTotals = new Map()
+  for (const item of confirmedPayload.items) {
+    for (const allocation of item.allocations) {
+      debtorTotals.set(allocation.name, Math.round(((debtorTotals.get(allocation.name) || 0) + allocation.amount) * 100) / 100)
+    }
+  }
+  const [memberRows] = await db.query(`
+    SELECT friend_name, username
+    FROM telegram_members
+    WHERE chat_id=? AND friend_name IS NOT NULL AND username IS NOT NULL AND username <> ''
+  `, [context.chatId])
+  const usernames = new Map(memberRows.map(member => [member.friend_name, member.username]))
+  const text = [
+    `✅ บันทึกแล้ว ${confirmedPayload.items.length} รายการ`,
     `เจ้าหนี้: ${confirmedPayload.creditor}`,
+    `เดือน: ${confirmedPayload.month}`,
+    "",
+    ...[...debtorTotals].map(([name, total]) => {
+      const username = usernames.get(name)
+      return `• ${username ? `@${username}` : name} ต้องจ่าย ${total.toFixed(2)} บาท`
+    }),
+    "",
     `เลขรายการ: ${createdIds.map(id => `#${id}`).join(", ")}`
   ].join("\n")
+  const payButtons = paymentLinks.map(link => [{
+    text: `💳 ${String(link.person).slice(0, 32)} — ชำระ/ส่งสลิป`,
+    url: link.url
+  }])
+  return {
+    text,
+    replyMarkup: {
+      inline_keyboard: [
+        ...payButtons,
+        ...telegramMainMenu(context).inline_keyboard
+      ]
+    }
+  }
 }
 
 async function handleTelegramEdit(context, args) {
@@ -2530,10 +2640,21 @@ app.post("/telegram/webhook", async (req, res) => {
   try {
     if (isBatchInputReply) {
       reply = await handleTelegramBatch(context, text)
+      if (!reply && req.body.message.reply_to_message?.message_id) {
+        await deleteTelegramMessage(context.chatId, req.body.message.reply_to_message.message_id)
+      }
     } else if (callbackQuery && command.startsWith("batch:")) {
       const [, action, token] = command.split(":")
-      reply = await handleTelegramBatchAction(context, action, token)
+      const actionResult = await handleTelegramBatchAction(context, action, token)
+      const actionReplyMarkup = typeof actionResult === "object" ? actionResult.replyMarkup : null
+      reply = typeof actionResult === "object" ? actionResult.text : actionResult
       await answerTelegramCallback(callbackQuery.id, action === "confirm" ? "กำลังบันทึกรายการ" : "ยกเลิกรายการแล้ว")
+      if (reply && callbackQuery.message?.message_id) {
+        const edited = await editTelegramMessage(context.chatId, callbackQuery.message.message_id, reply, {
+          reply_markup: actionReplyMarkup || telegramMainMenu(context)
+        })
+        if (edited) reply = null
+      }
     } else if (command === "/start" || command === "/menu" || command === "เมนู") {
       await sendTelegramMenu(context)
       reply = null
