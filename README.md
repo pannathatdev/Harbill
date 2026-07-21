@@ -62,3 +62,17 @@ VITE_ADSENSE_SLOT=1234567890
 ```
 
 Leave them blank while developing or before AdSense approval. The app also caches common API reads in the browser for a few minutes to reduce database traffic.
+
+## Telegram: add several due items at once
+
+After the Telegram group and member account are connected, send one message in this format:
+
+```text
+/batch
+หมูกระทะ | 900 | บี,แบงค์,ปิโป้
+น้ำมัน | 600 | บี,ปิโป้
+เจ้าหนี้: ปิโป้
+เดือน: 2026-07
+```
+
+Each item uses `title | total amount | comma-separated debtors`. The creditor and month lines are optional; they default to the connected member and the current Bangkok month. Harbill shows a 15-minute preview with Confirm and Cancel buttons before writing anything to the due tracker. A batch accepts up to 20 items.

@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS dues (
   approval_status VARCHAR(32) NOT NULL DEFAULT 'approved',
   telegram_chat_id VARCHAR(64) NULL,
   telegram_message_id VARCHAR(64) NULL,
+  batch_token VARCHAR(64) NULL,
   due_slip_id INT NULL,
   slip_name VARCHAR(255) NULL,
   slip_type VARCHAR(128) NULL,
@@ -111,6 +112,7 @@ CREATE TABLE IF NOT EXISTS dues (
   INDEX idx_dues_user_status (user_id, status),
   INDEX idx_dues_creator_user (created_by_user_id),
   INDEX idx_dues_telegram_chat (telegram_chat_id),
+  INDEX idx_dues_batch_token (batch_token),
   CONSTRAINT fk_dues_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -150,6 +152,20 @@ CREATE TABLE IF NOT EXISTS telegram_connect_tokens (
   used_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_telegram_connect_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS telegram_due_drafts (
+  token CHAR(32) PRIMARY KEY,
+  chat_id VARCHAR(64) NOT NULL,
+  telegram_user_id VARCHAR(64) NOT NULL,
+  owner_user_id INT NOT NULL,
+  payload JSON NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_telegram_due_drafts_lookup (chat_id, telegram_user_id),
+  INDEX idx_telegram_due_drafts_expires (expires_at),
+  CONSTRAINT fk_telegram_due_drafts_chat FOREIGN KEY (chat_id) REFERENCES telegram_chats(chat_id) ON DELETE CASCADE,
+  CONSTRAINT fk_telegram_due_drafts_user FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS due_slips (

@@ -222,7 +222,8 @@ async function ensureDuesSchema() {
         'source',
         'approval_status',
         'telegram_chat_id',
-        'telegram_message_id'
+        'telegram_message_id',
+        'batch_token'
       )
   `)
   const existingDueColumns = new Set(dueColumns.map(column => column.COLUMN_NAME))
@@ -252,6 +253,10 @@ async function ensureDuesSchema() {
   }
   if (!existingDueColumns.has("telegram_message_id")) {
     await db.query("ALTER TABLE dues ADD COLUMN telegram_message_id VARCHAR(64) NULL AFTER telegram_chat_id")
+  }
+  if (!existingDueColumns.has("batch_token")) {
+    await db.query("ALTER TABLE dues ADD COLUMN batch_token VARCHAR(64) NULL AFTER telegram_message_id")
+    await db.query("CREATE INDEX idx_dues_batch_token ON dues (batch_token)")
   }
 
   const [slipColumns] = await db.query(`
@@ -324,6 +329,22 @@ async function ensureTelegramSchema() {
       used_at DATETIME NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT fk_telegram_connect_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS telegram_due_drafts (
+      token CHAR(32) PRIMARY KEY,
+      chat_id VARCHAR(64) NOT NULL,
+      telegram_user_id VARCHAR(64) NOT NULL,
+      owner_user_id INT NOT NULL,
+      payload JSON NOT NULL,
+      expires_at DATETIME NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_telegram_due_drafts_lookup (chat_id, telegram_user_id),
+      INDEX idx_telegram_due_drafts_expires (expires_at),
+      CONSTRAINT fk_telegram_due_drafts_chat FOREIGN KEY (chat_id) REFERENCES telegram_chats(chat_id) ON DELETE CASCADE,
+      CONSTRAINT fk_telegram_due_drafts_user FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `)
 
@@ -510,6 +531,22 @@ async function sendTelegramMessage(chatId, text, options = {}) {
   }
 }
 
+async function answerTelegramCallback(callbackQueryId, text = "") {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  if (!token || !callbackQueryId) return false
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callback_query_id: callbackQueryId, text })
+    })
+    return response.ok
+  } catch (err) {
+    console.error("Telegram callback answer failed:", err.message)
+    return false
+  }
+}
+
 function telegramName(user = {}) {
   return [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || user.username || String(user.id || "")
 }
@@ -540,10 +577,61 @@ function currentBangkokMonth() {
 }
 
 function parseTelegramText(text = "") {
-  const cleaned = String(text || "").trim().replace(/\s+/g, " ")
-  const [rawCommand = "", ...rest] = cleaned.split(" ")
+  const raw = String(text || "").trim()
+  const [firstLine = "", ...followingLines] = raw.split(/\r?\n/)
+  const cleanedFirstLine = firstLine.trim().replace(/\s+/g, " ")
+  const [rawCommand = "", ...rest] = cleanedFirstLine.split(" ")
   const command = rawCommand.split("@")[0].toLowerCase()
-  return { command, args: rest, body: rest.join(" "), text: cleaned }
+  const body = [rest.join(" "), ...followingLines].filter(Boolean).join("\n").trim()
+  return { command, args: rest, body, text: raw }
+}
+
+function parseTelegramBatch(body, defaultCreditor = "") {
+  const lines = String(body || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  let creditor = defaultCreditor
+  let month = currentBangkokMonth()
+  const items = []
+
+  for (const line of lines) {
+    const setting = line.match(/^(creditor|เจ้าหนี้|คนรับเงิน|month|เดือน)\s*[:=]\s*(.+)$/i)
+    if (setting) {
+      if (/^(month|เดือน)$/i.test(setting[1])) month = setting[2].trim().slice(0, 7)
+      else creditor = setting[2].trim()
+      continue
+    }
+
+    const parts = line.split("|").map(value => value.trim())
+    if (parts.length !== 3) return { error: `รูปแบบไม่ถูกต้อง: ${line}` }
+    const [title, rawAmount, rawDebtors] = parts
+    const amount = Number(rawAmount.replace(/,/g, ""))
+    const debtors = [...new Set(rawDebtors.split(/[,，]/).map(name => name.trim().replace(/^@/, "")).filter(Boolean))]
+    if (!title || !Number.isFinite(amount) || amount <= 0 || debtors.length === 0) {
+      return { error: `ข้อมูลไม่ครบหรือยอดไม่ถูกต้อง: ${line}` }
+    }
+    items.push({ title, amount, debtors })
+  }
+
+  if (!creditor) return { error: "ยังไม่พบชื่อเจ้าหนี้ กรุณาเชื่อมบัญชีหรือตั้งค่า เจ้าหนี้: ชื่อ" }
+  if (!/^\d{4}-\d{2}$/.test(month)) return { error: "เดือนต้องอยู่ในรูปแบบ YYYY-MM" }
+  if (items.length === 0) return { error: "ยังไม่มีรายการ รูปแบบคือ ชื่อรายการ | ยอดรวม | คน1,คน2" }
+  if (items.length > 20) return { error: "เพิ่มได้สูงสุด 20 รายการต่อครั้ง" }
+
+  const normalizedItems = items.map(item => {
+    const debtors = item.debtors.filter(name => name !== creditor)
+    if (debtors.length === 0) return { ...item, debtors, allocations: [] }
+    const totalCents = Math.round(item.amount * 100)
+    const baseCents = Math.floor(totalCents / debtors.length)
+    const remainder = totalCents - (baseCents * debtors.length)
+    const allocations = debtors.map((name, index) => ({
+      name,
+      amount: (baseCents + (index < remainder ? 1 : 0)) / 100
+    }))
+    return { ...item, debtors, allocations }
+  })
+  if (normalizedItems.some(item => item.debtors.length === 0)) {
+    return { error: "อย่างน้อยหนึ่งรายการไม่มีลูกหนี้หลังตัดชื่อเจ้าหนี้ออก" }
+  }
+  return { creditor, month, items: normalizedItems }
 }
 
 function parseTelegramAdd(body, defaultCreditor = "") {
@@ -2029,6 +2117,136 @@ async function handleTelegramAdd(context, body) {
   return reply
 }
 
+async function handleTelegramBatch(context, body) {
+  if (!context.linkedChat) return "กลุ่มนี้ยังไม่ได้เชื่อมกับ Harbill"
+  if (!context.member?.user_id) return "กรุณาเชื่อมบัญชี Google ก่อนสร้างรายการ"
+
+  const creatorName = context.member.friend_name || telegramName(context.from)
+  const parsed = parseTelegramBatch(body, creatorName)
+  if (parsed.error) return parsed.error
+
+  const token = crypto.randomBytes(16).toString("hex")
+  const payload = {
+    creditor: parsed.creditor,
+    month: parsed.month,
+    creatorName,
+    items: parsed.items
+  }
+  await db.query("DELETE FROM telegram_due_drafts WHERE expires_at <= NOW()")
+  await db.query(`
+    INSERT INTO telegram_due_drafts (token, chat_id, telegram_user_id, owner_user_id, payload, expires_at)
+    VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE))
+  `, [token, context.chatId, context.telegramUserId, context.ownerUserId, JSON.stringify(payload)])
+
+  const debtorTotals = new Map()
+  for (const item of parsed.items) {
+    for (const allocation of item.allocations) {
+      debtorTotals.set(allocation.name, Math.round(((debtorTotals.get(allocation.name) || 0) + allocation.amount) * 100) / 100)
+    }
+  }
+  const preview = [
+    `ตรวจสอบ ${parsed.items.length} รายการก่อนบันทึก`,
+    `เจ้าหนี้: ${parsed.creditor}`,
+    `เดือน: ${parsed.month}`,
+    "",
+    ...parsed.items.map((item, index) => `${index + 1}. ${item.title} ${item.amount.toFixed(2)} ÷ ${item.debtors.length} คน\n   ${item.allocations.map(allocation => `${allocation.name} ${allocation.amount.toFixed(2)}`).join(", ")}`),
+    "",
+    "ยอดที่แต่ละคนต้องจ่าย:",
+    ...[...debtorTotals].map(([name, total]) => `• ${name}: ${total.toFixed(2)}`),
+    "",
+    "รายการร่างนี้หมดอายุใน 15 นาที"
+  ].join("\n")
+
+  if (preview.length > 3900) {
+    await db.query("DELETE FROM telegram_due_drafts WHERE token=?", [token])
+    return "รายการยาวเกินกว่าที่ Telegram แสดงได้ กรุณาแบ่งเป็นสองชุด"
+  }
+
+  await sendTelegramMessage(context.chatId, preview, {
+    reply_markup: {
+      inline_keyboard: [[
+        { text: "✅ ยืนยันทั้งหมด", callback_data: `batch:confirm:${token}` },
+        { text: "❌ ยกเลิก", callback_data: `batch:cancel:${token}` }
+      ]]
+    }
+  })
+  return null
+}
+
+async function handleTelegramBatchAction(context, action, token) {
+  if (!/^[a-f0-9]{32}$/.test(token || "")) return "รายการร่างไม่ถูกต้อง"
+  if (action !== "confirm" && action !== "cancel") return "คำสั่งรายการร่างไม่ถูกต้อง"
+
+  const connection = await db.getConnection()
+  const createdIds = []
+  let confirmedPayload = null
+  try {
+    await connection.beginTransaction()
+    const [rows] = await connection.query(`
+      SELECT * FROM telegram_due_drafts
+      WHERE token=? AND chat_id=? AND telegram_user_id=? AND owner_user_id=? AND expires_at > NOW()
+      LIMIT 1 FOR UPDATE
+    `, [token, context.chatId, context.telegramUserId, context.ownerUserId])
+    const draft = rows[0]
+    if (!draft) {
+      await connection.rollback()
+      return "รายการร่างหมดอายุ ถูกยืนยันไปแล้ว หรือไม่ใช่รายการของคุณ"
+    }
+    if (action === "cancel") {
+      await connection.query("DELETE FROM telegram_due_drafts WHERE token=?", [token])
+      await connection.commit()
+      return "ยกเลิกรายการร่างแล้ว"
+    }
+
+    const payload = typeof draft.payload === "string" ? JSON.parse(draft.payload) : draft.payload
+    if (!payload || !Array.isArray(payload.items) || payload.items.length === 0) {
+      await connection.rollback()
+      return "ข้อมูลรายการร่างไม่ถูกต้อง"
+    }
+    confirmedPayload = payload
+    for (const item of payload.items) {
+      for (const allocation of item.allocations) {
+        await connection.query("INSERT IGNORE INTO friends (user_id, name) VALUES (?, ?)", [context.ownerUserId, allocation.name])
+        const [result] = await connection.query(`
+          INSERT INTO dues (
+            user_id, created_by_user_id, created_by_telegram_id, created_by_name,
+            person_name, creditor_name, title, amount, due_month, status, note,
+            source, approval_status, telegram_chat_id, batch_token
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, 'telegram', 'approved', ?, ?)
+        `, [
+          context.ownerUserId,
+          context.member.user_id,
+          context.telegramUserId,
+          payload.creatorName,
+          allocation.name,
+          payload.creditor,
+          item.title,
+          allocation.amount,
+          payload.month,
+          `Batch total ${Number(item.amount).toFixed(2)}; split ${item.debtors.length} people`,
+          context.chatId,
+          token
+        ])
+        createdIds.push(result.insertId)
+      }
+    }
+    await connection.query("DELETE FROM telegram_due_drafts WHERE token=?", [token])
+    await connection.commit()
+  } catch (err) {
+    await connection.rollback()
+    throw err
+  } finally {
+    connection.release()
+  }
+
+  return [
+    `✅ บันทึก ${confirmedPayload.items.length} รายการเรียบร้อย`,
+    `สร้างยอดติดตาม ${createdIds.length} รายการย่อย`,
+    `เจ้าหนี้: ${confirmedPayload.creditor}`,
+    `เลขรายการ: ${createdIds.map(id => `#${id}`).join(", ")}`
+  ].join("\n")
+}
+
 async function handleTelegramEdit(context, args) {
   if (!context.linkedChat) return "This chat is not connected."
   const id = Number(args[0])
@@ -2274,7 +2492,11 @@ app.post("/telegram/webhook", async (req, res) => {
   let reply = null
 
   try {
-    if (command === "/start" || command === "/menu" || command === "เมนู") {
+    if (callbackQuery && command.startsWith("batch:")) {
+      const [, action, token] = command.split(":")
+      reply = await handleTelegramBatchAction(context, action, token)
+      await answerTelegramCallback(callbackQuery.id, action === "confirm" ? "กำลังบันทึกรายการ" : "ยกเลิกรายการแล้ว")
+    } else if (command === "/start" || command === "/menu" || command === "เมนู") {
       await sendTelegramMenu(context)
       reply = null
     } else if (command === "/help" || command === "วิธีใช้") {
@@ -2284,7 +2506,13 @@ app.post("/telegram/webhook", async (req, res) => {
         "/connect <token> เพื่อเชื่อม Google account",
         "/name Bee เพื่อตั้งชื่อคนรับเงินของคุณ",
         "/add Dinner 900 split Me,A,C",
-      "/edit <id> amount 450",
+        "เพิ่มหลายรายการ:",
+        "/batch",
+        "หมูกระทะ | 900 | บี,แบงค์,ปิโป้",
+        "น้ำมัน | 600 | บี,ปิโป้",
+        "เจ้าหนี้: ปิโป้",
+        "เดือน: 2026-07",
+        "/edit <id> amount 450",
         "/paid <id>",
         "/list 2026-07"
       ].join("\n"), { reply_markup: telegramMainMenu(context) })
@@ -2305,6 +2533,8 @@ app.post("/telegram/webhook", async (req, res) => {
       reply = await handleTelegramConnect(context, args[0])
     } else if (command === "/add" || command === "/เพิ่ม") {
       reply = await handleTelegramAdd(context, body)
+    } else if (command === "/batch" || command === "/ชุด" || command === "/หลายรายการ") {
+      reply = await handleTelegramBatch(context, body)
     } else if (command === "/edit" || command === "/แก้") {
       reply = await handleTelegramEdit(context, args)
     } else if (command === "/paid" || command === "/จ่ายแล้ว") {
