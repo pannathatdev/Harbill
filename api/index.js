@@ -2549,58 +2549,108 @@ app.post("/telegram/web-app/dues", async (req, res) => {
   const context = await getTelegramWebAppContext(req.body?.initData, req.body?.chatId)
   if (context.status !== 200) return res.status(context.status).json({ error: context.error })
 
-  const title = String(req.body.title || "").trim()
-  const amount = Number(String(req.body.amount || "").replace(/,/g, ""))
   const month = String(req.body.month || "").trim().slice(0, 7)
   const note = String(req.body.note || "").trim()
-  const debtors = Array.isArray(req.body.debtors)
-    ? req.body.debtors.map(name => String(name || "").trim()).filter(Boolean)
-    : []
   const creditor = String(context.member.friend_name || context.verified.user.first_name || telegramName(context.verified.user)).trim()
-
-  if (!title || !Number.isFinite(amount) || amount <= 0 || !/^\d{4}-\d{2}$/.test(month) || debtors.length === 0) {
-    return res.status(400).json({ error: "Invalid due item" })
+  const inputItems = Array.isArray(req.body.items) ? req.body.items : [{
+    title: req.body.title,
+    amount: req.body.amount,
+    debtors: req.body.debtors
+  }]
+  if (!/^\d{4}-\d{2}$/.test(month) || inputItems.length === 0 || inputItems.length > 20) {
+    return res.status(400).json({ error: "เพิ่มได้ครั้งละ 1-20 รายการ" })
   }
 
-  const uniqueDebtors = [...new Set(debtors)].filter(name => name !== creditor)
-  if (uniqueDebtors.length === 0) return res.status(400).json({ error: "No debtor selected" })
-
-  const share = Math.round((amount / uniqueDebtors.length) * 100) / 100
-  const createdIds = []
-  for (const person of uniqueDebtors) {
-    await db.query("INSERT IGNORE INTO friends (user_id, name) VALUES (?, ?)", [context.ownerUserId, person])
-    const [result] = await db.query(`
-      INSERT INTO dues (
-        user_id, created_by_user_id, created_by_telegram_id, created_by_name,
-        person_name, creditor_name, title, amount, due_month, status, note,
-        source, approval_status, telegram_chat_id
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, 'telegram', 'approved', ?)
-    `, [
-      context.ownerUserId,
-      context.member.user_id,
-      context.telegramUserId,
-      creditor,
-      person,
-      creditor,
+  const parsedItems = []
+  for (const input of inputItems) {
+    const title = String(input?.title || "").trim()
+    const amount = Number(String(input?.amount || "").replace(/,/g, ""))
+    const debtors = [...new Set((Array.isArray(input?.debtors) ? input.debtors : [])
+      .map(name => String(name || "").trim())
+      .filter(Boolean))].filter(name => name !== creditor)
+    if (!title || !Number.isFinite(amount) || amount <= 0 || debtors.length === 0) {
+      return res.status(400).json({ error: "กรุณากรอกรายการ ราคา และเลือกคนที่ต้องจ่ายให้ครบ" })
+    }
+    const totalCents = Math.round(amount * 100)
+    const baseCents = Math.floor(totalCents / debtors.length)
+    const remainder = totalCents - (baseCents * debtors.length)
+    parsedItems.push({
       title,
-      share,
-      month,
-      note || `Created from Telegram Web App; original amount ${amount}`,
-      context.chatId
-    ])
-    createdIds.push(result.insertId)
+      amount,
+      allocations: debtors.map((person, index) => ({
+        person,
+        amount: (baseCents + (index < remainder ? 1 : 0)) / 100
+      }))
+    })
   }
 
+  const createdIds = []
+  const paymentLinks = []
+  const connection = await db.getConnection()
+  try {
+    await connection.beginTransaction()
+    for (const item of parsedItems) {
+      for (const allocation of item.allocations) {
+        await connection.query("INSERT IGNORE INTO friends (user_id, name) VALUES (?, ?)", [context.ownerUserId, allocation.person])
+        const [result] = await connection.query(`
+          INSERT INTO dues (
+            user_id, created_by_user_id, created_by_telegram_id, created_by_name,
+            person_name, creditor_name, title, amount, due_month, status, note,
+            source, approval_status, telegram_chat_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, 'telegram', 'approved', ?)
+        `, [context.ownerUserId, context.member.user_id, context.telegramUserId, creditor,
+          allocation.person, creditor, item.title, allocation.amount, month,
+          note || `Telegram total ${item.amount.toFixed(2)}`, context.chatId])
+        createdIds.push(result.insertId)
+      }
+    }
+
+    const debtorNames = [...new Set(parsedItems.flatMap(item => item.allocations.map(allocation => allocation.person)))]
+    for (const person of debtorNames) {
+      const [existing] = await connection.query(
+        "SELECT token FROM due_payment_links WHERE user_id=? AND person_name=? AND due_month=? ORDER BY created_at DESC LIMIT 1",
+        [context.ownerUserId, person, month]
+      )
+      const paymentToken = existing[0]?.token || crypto.randomBytes(18).toString("hex")
+      if (!existing[0]) {
+        await connection.query(
+          "INSERT INTO due_payment_links (token, user_id, person_name, due_month) VALUES (?, ?, ?, ?)",
+          [paymentToken, context.ownerUserId, person, month]
+        )
+      }
+      paymentLinks.push({ person, url: `${CLIENT_URL}/pay/${paymentToken}?name=${encodeURIComponent(person)}` })
+    }
+    await connection.commit()
+  } catch (err) {
+    await connection.rollback()
+    throw err
+  } finally {
+    connection.release()
+  }
+
+  const totals = new Map()
+  parsedItems.forEach(item => item.allocations.forEach(allocation => {
+    totals.set(allocation.person, Math.round(((totals.get(allocation.person) || 0) + allocation.amount) * 100) / 100)
+  }))
+  const [memberRows] = await db.query(`
+    SELECT friend_name, username FROM telegram_members
+    WHERE chat_id=? AND friend_name IS NOT NULL AND username IS NOT NULL AND username <> ''
+  `, [context.chatId])
+  const usernames = new Map(memberRows.map(member => [member.friend_name, member.username]))
   const text = [
-    `เพิ่มรายการแล้ว: ${title}`,
-    `คนรับเงิน: ${creditor}`,
-    `ยอดรวม: ${amount.toFixed(2)}`,
-    `คนต้องจ่าย: ${uniqueDebtors.length} คน, คนละ ${share.toFixed(2)}`,
-    `รายการ: ${createdIds.map(id => `#${id}`).join(", ")}`
+    `✅ บันทึกแล้ว ${parsedItems.length} รายการ`,
+    `เจ้าหนี้: ${creditor}`,
+    `เดือน: ${month}`,
+    "",
+    ...[...totals].map(([person, total]) => `• ${usernames.get(person) ? `@${usernames.get(person)}` : person} ต้องจ่าย ${total.toFixed(2)} บาท`)
   ].join("\n")
   const sent = await sendTelegramMessage(context.chatId, text, {
-    reply_markup: telegramMainMenu({ chatId: context.chatId })
+    reply_markup: {
+      inline_keyboard: [
+        ...paymentLinks.map(link => [{ text: `💳 ${String(link.person).slice(0, 30)} — ชำระ/ส่งสลิป`, url: link.url }]),
+        ...telegramMainMenu(context).inline_keyboard
+      ]
+    }
   })
   if (sent?.message_id) {
     await db.query(
@@ -2609,7 +2659,7 @@ app.post("/telegram/web-app/dues", async (req, res) => {
     )
   }
 
-  res.json({ ok: true, ids: createdIds, creditor, share })
+  res.json({ ok: true, ids: createdIds, creditor, itemCount: parsedItems.length })
 })
 
 app.post("/telegram/webhook", async (req, res) => {
