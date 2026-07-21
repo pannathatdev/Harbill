@@ -48,6 +48,13 @@ const copy = {
     linkHelp: "ส่งลิงก์นี้ให้คนจ่าย เขาจะเห็น QR ตามยอดจริงและอัปโหลดสลิปกลับเข้าระบบได้",
     dataNote: "สลิปนี้โหลดจากฐานข้อมูลของรายการค้าง และจะยังอยู่ให้ตรวจย้อนหลังหลังรีเฟรชหน้า",
     loading: "กำลังโหลดข้อมูลยอดค้าง...",
+    telegramTitle: "เชื่อม Telegram Group",
+    telegramHelp: "สร้างคำสั่งเชื่อม แล้วส่งคำสั่งนั้นในกลุ่มที่เพิ่ม Harbill Bot ไว้",
+    telegramCreate: "สร้างคำสั่งเชื่อม",
+    telegramCreating: "กำลังสร้าง...",
+    telegramCopied: "คัดลอกคำสั่งเชื่อมแล้ว",
+    telegramExpires: "คำสั่งนี้ใช้ได้ครั้งเดียวและหมดอายุใน",
+    minutes: "นาที",
   },
   en: {
     title: "Dues",
@@ -93,6 +100,13 @@ const copy = {
     linkHelp: "Send this link to the payer. They can scan the exact QR amount and upload the slip back into this record.",
     dataNote: "This slip is loaded from the due record and remains available after refresh.",
     loading: "Loading dues...",
+    telegramTitle: "Connect Telegram Group",
+    telegramHelp: "Create a connection command, then send it in the group that contains the Harbill Bot.",
+    telegramCreate: "Create connection command",
+    telegramCreating: "Creating...",
+    telegramCopied: "Connection command copied",
+    telegramExpires: "This one-time command expires in",
+    minutes: "minutes",
   },
 }
 
@@ -308,11 +322,15 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
   const [loading, setLoading] = useState(true)
   const [usingDatabase, setUsingDatabase] = useState(false)
   const [expandedPeople, setExpandedPeople] = useState({})
+  const [telegramConnect, setTelegramConnect] = useState(null)
+  const [telegramConnecting, setTelegramConnecting] = useState(false)
   const t = copy[lang] || copy.th
 
   useEffect(() => {
     if (usingDatabase) return
-    const serializable = items.map(({ slipUrl, ...item }) => item)
+    const serializable = items.map(item => Object.fromEntries(
+      Object.entries(item).filter(([key]) => key !== "slipUrl")
+    ))
     localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable))
   }, [items, usingDatabase])
 
@@ -454,6 +472,20 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
       document.body.removeChild(textarea)
     }
     showNotice(message)
+  }
+
+  async function createTelegramConnection() {
+    if (telegramConnecting) return
+    setTelegramConnecting(true)
+    try {
+      const connection = await api.createTelegramConnectToken()
+      setTelegramConnect(connection)
+      await copyToClipboard(connection.command, t.telegramCopied)
+    } catch (err) {
+      showNotice(err.message || "สร้างคำสั่งเชื่อม Telegram ไม่สำเร็จ")
+    } finally {
+      setTelegramConnecting(false)
+    }
   }
 
   function addItem() {
@@ -680,6 +712,38 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
               </div>
             )}
           </div>
+        </section>
+
+        <section className={`rounded-2xl border p-4 shadow-sm ${panel}`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-black">{t.telegramTitle}</h2>
+              <p className={`mt-1 text-xs leading-5 ${muted}`}>{t.telegramHelp}</p>
+            </div>
+            <button
+              type="button"
+              onClick={createTelegramConnection}
+              disabled={telegramConnecting}
+              className="shrink-0 rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-500 disabled:cursor-wait disabled:opacity-60"
+            >
+              {telegramConnecting ? t.telegramCreating : t.telegramCreate}
+            </button>
+          </div>
+          {telegramConnect?.command && (
+            <div className={`mt-3 rounded-xl border p-3 ${softPanel}`}>
+              <button
+                type="button"
+                onClick={() => copyToClipboard(telegramConnect.command, t.telegramCopied)}
+                className="flex w-full items-center justify-between gap-3 text-left"
+              >
+                <code className="min-w-0 break-all text-sm font-bold text-sky-400">{telegramConnect.command}</code>
+                <CopyIcon />
+              </button>
+              <p className={`mt-2 text-xs ${muted}`}>
+                {t.telegramExpires} {telegramConnect.expiresMinutes} {t.minutes}
+              </p>
+            </div>
+          )}
         </section>
 
         <section className="grid gap-3 sm:grid-cols-4">
