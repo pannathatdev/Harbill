@@ -2345,43 +2345,38 @@ function telegramMainMenu(context) {
   return {
     inline_keyboard: [
       [{
-        text: "เพิ่มรายการ",
-        web_app: { url: `${CLIENT_URL}/telegram/add?chat_id=${encodeURIComponent(context.chatId)}` }
+        text: "➕ เพิ่มหลายรายการ",
+        callback_data: "/batch_help"
       }],
       [
-        { text: "รายการเดือนนี้", callback_data: "/list" },
-        { text: "วิธีใช้", callback_data: "/help" }
+        { text: "📋 รายการเดือนนี้", callback_data: "/list" },
+        { text: "ℹ️ วิธีใช้", callback_data: "/help" }
       ]
     ]
   }
 }
 
-function telegramReplyMenu() {
-  return {
-    keyboard: [
-      [{ text: "เพิ่มรายการ" }, { text: "รายการเดือนนี้" }],
-      [{ text: "วิธีใช้" }]
-    ],
-    resize_keyboard: true,
-    is_persistent: true
-  }
+function telegramBatchHelpText() {
+  return [
+    "ส่งข้อความหนึ่งชุดในรูปแบบนี้:",
+    "",
+    "/batch",
+    "หมูกระทะ | 900 | บี,แบงค์,ปิโป้",
+    "น้ำมัน | 600 | บี,ปิโป้",
+    "เจ้าหนี้: ปิโป้",
+    "เดือน: 2026-07",
+    "",
+    "แต่ละบรรทัดใช้: รายการ | ยอดรวม | รายชื่อคนหาร",
+    "บรรทัดเจ้าหนี้และเดือนจะไม่ใส่ก็ได้"
+  ].join("\n")
 }
 
 async function sendTelegramMenu(context) {
-  const webAppUrl = `${CLIENT_URL}/telegram/add?chat_id=${encodeURIComponent(context.chatId)}`
-  await sendTelegramMessage(context.chatId, "เมนู Harbill พร้อมใช้งานครับ", {
-    reply_markup: telegramReplyMenu()
+  await sendTelegramMessage(context.chatId, "ซ่อนเมนูแบบเดิมแล้ว", {
+    reply_markup: { remove_keyboard: true }
   })
-  await sendTelegramMessage(context.chatId, "กดปุ่มด้านล่างเพื่อเพิ่มรายการแบบฟอร์ม", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "เพิ่มรายการ", web_app: { url: webAppUrl } }],
-        [
-          { text: "รายการเดือนนี้", callback_data: "/list" },
-          { text: "วิธีใช้", callback_data: "/help" }
-        ]
-      ]
-    }
+  await sendTelegramMessage(context.chatId, "Harbill — จัดการรายการติดตามหนี้", {
+    reply_markup: telegramMainMenu(context)
   })
 }
 
@@ -2517,14 +2512,14 @@ app.post("/telegram/webhook", async (req, res) => {
         "/list 2026-07"
       ].join("\n"), { reply_markup: telegramMainMenu(context) })
       reply = null
+    } else if (command === "/batch_help") {
+      await sendTelegramMessage(context.chatId, telegramBatchHelpText(), {
+        reply_markup: telegramMainMenu(context)
+      })
+      reply = null
     } else if (command === "เพิ่มรายการ") {
-      await sendTelegramMessage(context.chatId, "กดปุ่มนี้เพื่อเปิดฟอร์มเพิ่มรายการ", {
-        reply_markup: {
-          inline_keyboard: [[{
-            text: "เพิ่มรายการ",
-            web_app: { url: `${CLIENT_URL}/telegram/add?chat_id=${encodeURIComponent(context.chatId)}` }
-          }]]
-        }
+      await sendTelegramMessage(context.chatId, telegramBatchHelpText(), {
+        reply_markup: telegramMainMenu(context)
       })
       reply = null
     } else if (command === "รายการเดือนนี้") {
@@ -2549,6 +2544,9 @@ app.post("/telegram/webhook", async (req, res) => {
     reply = "Sorry, Harbill could not process that command."
   }
 
+  if (callbackQuery && !command.startsWith("batch:")) {
+    await answerTelegramCallback(callbackQuery.id)
+  }
   if (reply) await sendTelegramMessage(context.chatId, reply)
   res.json({ ok: true })
 })
