@@ -3,17 +3,35 @@
   "short_name": "Harbill",
   "description": "แอปหารบิลภาษาไทย สรุปยอด แยกค่าอาหาร และสร้าง QR พร้อมเพย์",
   "lang": "th-TH",
-  "start_url": "/",
+  "id": "/",
+  "start_url": "/app",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
   "icons": [
     {
       "src": "/favicon.svg",
-      "sizes": "64x64",
+      "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any"
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "utilities", "productivity"],
+  "shortcuts": [
+    {
+      "name": "เปิดรอบหารบิล",
+      "short_name": "รอบใหม่",
+      "url": "/app",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "ดูยอดค้าง",
+      "short_name": "ยอดค้าง",
+      "url": "/dues",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
     }
   ]
 }
