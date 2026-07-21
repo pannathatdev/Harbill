@@ -11,8 +11,8 @@ function tg() {
 
 export default function TelegramAddDuePage() {
   const params = new URLSearchParams(window.location.search)
-  const chatId = params.get("chat_id") || ""
   const webApp = tg()
+  const chatId = params.get("chat_id") || webApp?.initDataUnsafe?.start_param || ""
   const initData = webApp?.initData || ""
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -146,7 +146,7 @@ export default function TelegramAddDuePage() {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-black">คนที่ต้องจ่ายคืน</p>
-                  <p className="mt-1 text-xs text-slate-400">เลือกจากรายชื่อใน Harbill</p>
+                  <p className="mt-1 text-xs text-slate-400">เลือกสมาชิกกลุ่มที่เชื่อมบัญชีแล้ว</p>
                 </div>
                 <span className="rounded-full bg-sky-400/15 px-2.5 py-1 text-xs font-black text-sky-100">
                   {form.debtors.length}
@@ -174,7 +174,7 @@ export default function TelegramAddDuePage() {
                 })}
                 {friends.length === 0 && (
                   <p className="rounded-xl border border-white/10 bg-slate-950 p-3 text-sm text-slate-400">
-                    ยังไม่มีรายชื่อ ให้เพิ่มเพื่อนในหน้า Harbill ก่อน
+                    ยังไม่มีสมาชิกที่เลือกได้ ให้สมาชิกส่งคำสั่ง /connect ในกลุ่มก่อน
                   </p>
                 )}
               </div>

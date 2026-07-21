@@ -2342,12 +2342,20 @@ async function handleTelegramName(context, args) {
 }
 
 function telegramMainMenu(context) {
-  return {
-    inline_keyboard: [
-      [{
+  const botUsername = String(process.env.TELEGRAM_BOT_USERNAME || "").replace(/^@/, "").trim()
+  const miniAppShortName = String(process.env.TELEGRAM_WEBAPP_SHORT_NAME || "").trim()
+  const addButton = botUsername && miniAppShortName
+    ? {
+        text: "➕ เพิ่มรายการ",
+        url: `https://t.me/${botUsername}/${miniAppShortName}?startapp=${encodeURIComponent(context.chatId)}`
+      }
+    : {
         text: "➕ เพิ่มหลายรายการ",
         callback_data: "/batch_help"
-      }],
+      }
+  return {
+    inline_keyboard: [
+      [addButton],
       [
         { text: "📋 รายการเดือนนี้", callback_data: "/list" },
         { text: "ℹ️ วิธีใช้", callback_data: "/help" }
@@ -2385,6 +2393,20 @@ app.post("/telegram/web-app/context", async (req, res) => {
   if (context.status !== 200) return res.status(context.status).json({ error: context.error })
 
   const [friends] = await db.query("SELECT id, name FROM friends WHERE user_id=? ORDER BY name", [context.ownerUserId])
+  const [telegramMembers] = await db.query(`
+    SELECT telegram_user_id, friend_name, username, display_name
+    FROM telegram_members
+    WHERE chat_id=? AND friend_name IS NOT NULL AND friend_name <> ''
+    ORDER BY friend_name
+  `, [context.chatId])
+  const selectablePeople = new Map()
+  friends.forEach(friend => selectablePeople.set(friend.name, { id: `friend:${friend.id}`, name: friend.name, source: "harbill" }))
+  telegramMembers.forEach(member => selectablePeople.set(member.friend_name, {
+    id: `telegram:${member.telegram_user_id}`,
+    name: member.friend_name,
+    username: member.username || "",
+    source: "telegram"
+  }))
   res.json({
     chat: {
       id: context.chatId,
@@ -2394,7 +2416,7 @@ app.post("/telegram/web-app/context", async (req, res) => {
       name: context.member.friend_name || context.verified.user.first_name || telegramName(context.verified.user),
       role: context.member.role
     },
-    friends
+    friends: [...selectablePeople.values()]
   })
 })
 
