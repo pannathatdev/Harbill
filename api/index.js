@@ -2350,8 +2350,8 @@ function telegramMainMenu(context) {
         url: `https://t.me/${botUsername}/${miniAppShortName}?startapp=${encodeURIComponent(context.chatId)}`
       }
     : {
-        text: "➕ เพิ่มหลายรายการ",
-        callback_data: "/batch_help"
+        text: "➕ เพิ่มรายการ",
+        callback_data: "/batch_start"
       }
   return {
     inline_keyboard: [
@@ -2376,6 +2376,21 @@ function telegramBatchHelpText() {
     "",
     "แต่ละบรรทัดใช้: รายการ | ยอดรวม | รายชื่อคนหาร",
     "บรรทัดเจ้าหนี้และเดือนจะไม่ใส่ก็ได้"
+  ].join("\n")
+}
+
+function telegramBatchInputPrompt() {
+  return [
+    "✏️ ตอบข้อความนี้ด้วยรายการที่ต้องการเพิ่ม",
+    "",
+    "รายการ | ราคา | คนที่ต้องจ่าย",
+    "",
+    "ตัวอย่าง:",
+    "หมูกรอบ | 50 | ดีน",
+    "น้ำมัน | 600 | บี,เอ",
+    "",
+    "ส่งหลายบรรทัดในข้อความเดียวได้",
+    "ระบบจะใช้คุณเป็นเจ้าหนี้และใช้เดือนปัจจุบันให้อัตโนมัติ"
   ].join("\n")
 }
 
@@ -2506,10 +2521,16 @@ app.post("/telegram/webhook", async (req, res) => {
   }
 
   const { command, args, body } = parseTelegramText(text)
+  const isBatchInputReply = Boolean(
+    req.body?.message?.reply_to_message?.from?.is_bot &&
+    req.body.message.reply_to_message.text?.startsWith("✏️ ตอบข้อความนี้ด้วยรายการ")
+  )
   let reply = null
 
   try {
-    if (callbackQuery && command.startsWith("batch:")) {
+    if (isBatchInputReply) {
+      reply = await handleTelegramBatch(context, text)
+    } else if (callbackQuery && command.startsWith("batch:")) {
       const [, action, token] = command.split(":")
       reply = await handleTelegramBatchAction(context, action, token)
       await answerTelegramCallback(callbackQuery.id, action === "confirm" ? "กำลังบันทึกรายการ" : "ยกเลิกรายการแล้ว")
@@ -2537,6 +2558,15 @@ app.post("/telegram/webhook", async (req, res) => {
     } else if (command === "/batch_help") {
       await sendTelegramMessage(context.chatId, telegramBatchHelpText(), {
         reply_markup: telegramMainMenu(context)
+      })
+      reply = null
+    } else if (command === "/batch_start") {
+      await sendTelegramMessage(context.chatId, telegramBatchInputPrompt(), {
+        reply_markup: {
+          force_reply: true,
+          selective: true,
+          input_field_placeholder: "หมูกรอบ | 50 | ดีน"
+        }
       })
       reply = null
     } else if (command === "เพิ่มรายการ") {
