@@ -714,7 +714,7 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
           </div>
         </section>
 
-        <section className={`rounded-2xl border p-4 shadow-sm ${panel}`}>
+        {false && <section className={`rounded-2xl border p-4 shadow-sm ${panel}`}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-sm font-black">{t.telegramTitle}</h2>
@@ -744,7 +744,7 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
               </p>
             </div>
           )}
-        </section>
+        </section>}
 
         <section className="grid gap-3 sm:grid-cols-4">
           {[

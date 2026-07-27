@@ -116,6 +116,17 @@ export default function PublicPayPage({ darkMode = true }) {
     }
   }
 
+  async function viewUploadedSlip(item) {
+    try {
+      const blob = await api.getPublicDueItemSlipBlob(token, item.id)
+      const url = URL.createObjectURL(blob)
+      window.open(url, "_blank", "noopener,noreferrer")
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (err) {
+      setUploadMessage(err.message || "เปิดสลิปไม่ได้")
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     localStorage.setItem("harbill:returnTo", `/pay/${token}`)
@@ -316,6 +327,11 @@ export default function PublicPayPage({ darkMode = true }) {
                       <p className="text-sm font-bold">{item.title}</p>
                       {item.note && <p className={`mt-1 text-xs ${muted}`}>{item.note}</p>}
                       {item.slipName && <p className="mt-1 text-xs font-semibold text-amber-500">ส่งสลิปแล้ว รอตรวจ</p>}
+                      {item.slipName && (
+                        <button type="button" onClick={() => viewUploadedSlip(item)} className="mt-2 text-xs font-bold text-sky-400 underline">
+                          ดูสลิปที่ส่ง
+                        </button>
+                      )}
                       <p className="mt-2 text-lg font-black">฿{formatMoney(item.amount)}</p>
                     </div>
                     <div className="space-y-2">

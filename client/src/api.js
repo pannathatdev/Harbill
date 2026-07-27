@@ -215,6 +215,15 @@ export const api = {
       return data
     })
   },
+  getPublicDueItemSlipBlob: (token, id) => fetch(`${BASE}/pay/${token}/items/${id}/slip`, {
+    headers: { "Authorization": `Bearer ${getToken()}` }
+  }).then(async r => {
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}))
+      throw new Error(data?.error || "ไม่สามารถเปิดสลิปได้")
+    }
+    return r.blob()
+  }),
   getDueSlipBlob: (id) => fetch(`${BASE}/dues/${id}/slip`, {
     headers: { "Authorization": `Bearer ${getToken()}` }
   }).then(async r => {

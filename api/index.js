@@ -1910,6 +1910,58 @@ async function paymentPayloadForUser(token, viewerUserId) {
   }
 }
 
+async function notifyTelegramSlipStatus({ token, ownerUserId, payerUserId, person, month, title = "", amount }) {
+  const [payerRows] = await db.query(`
+    SELECT DISTINCT telegram_user_id
+    FROM telegram_members
+    WHERE user_id=? AND telegram_user_id IS NOT NULL
+  `, [payerUserId])
+  const paymentUrl = telegramPaymentUrl(token, person)
+  await Promise.all(payerRows.map(member => sendTelegramMessage(member.telegram_user_id, [
+    "🟡 สถานะ: ส่งสลิปแล้ว รอเจ้าหนี้ตรวจ",
+    title ? `รายการ: ${title}` : `เดือน: ${month}`,
+    `ยอด ${Number(amount || 0).toFixed(2)} บาท`
+  ].join("\n"), {
+    reply_markup: {
+      inline_keyboard: [[{ text: "🧾 ดูรายการและสลิป", url: paymentUrl }]]
+    }
+  })))
+
+  const [creatorRows] = await db.query(`
+    SELECT DISTINCT created_by_telegram_id
+    FROM dues
+    WHERE user_id=? AND person_name=? AND due_month=?
+      AND created_by_telegram_id IS NOT NULL AND created_by_telegram_id <> ''
+  `, [ownerUserId, person, month])
+  await Promise.all(creatorRows.map(creator => sendTelegramMessage(creator.created_by_telegram_id, [
+    `📎 ${person} ส่งสลิปแล้ว`,
+    title || `ยอดรวมเดือน ${month}`,
+    `ยอด ${Number(amount || 0).toFixed(2)} บาท`,
+    "สถานะ: รอตรวจสอบ"
+  ].join("\n"), {
+    reply_markup: {
+      inline_keyboard: [[{ text: "🔎 ตรวจสลิปใน Harbill", url: `${CLIENT_URL}/dues` }]]
+    }
+  })))
+}
+
+async function notifyTelegramPaidStatus(due) {
+  if (!due?.debtor_user_id) return
+  const [members] = await db.query(`
+    SELECT DISTINCT telegram_user_id
+    FROM telegram_members
+    WHERE user_id=? AND telegram_user_id IS NOT NULL
+  `, [due.debtor_user_id])
+  await Promise.all(members.map(member => (
+    sendTelegramMessage(member.telegram_user_id, [
+      "🟢 สถานะ: ชำระแล้ว",
+      `รายการ: ${due.title}`,
+      `ยอด ${Number(due.amount || 0).toFixed(2)} บาท`,
+      `เดือน ${due.due_month}`
+    ].join("\n"))
+  )))
+}
+
 app.get("/dues", requireAuth, async (req, res) => {
   await ensureDuesSchema()
   const month = String(req.query.month || "").slice(0, 7)
@@ -2006,6 +2058,7 @@ app.patch("/dues/:id", requireAuth, async (req, res) => {
   await db.query(`UPDATE dues SET ${fields.join(", ")} WHERE id=? AND user_id=?`, values)
   const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
   if (!rows[0]) return res.status(404).json({ error: "Due item not found" })
+  if (req.body.status === "paid") await notifyTelegramPaidStatus(rows[0])
   res.json(mapDue(rows[0]))
 })
 
@@ -2091,6 +2144,34 @@ app.get("/pay/:token", requireAuth, async (req, res) => {
   res.json(result.body)
 })
 
+app.get("/pay/:token/items/:id/slip", requireAuth, async (req, res) => {
+  await ensureDuesSchema()
+  const token = String(req.params.token || "")
+  const result = await paymentPayloadForUser(token, req.user.id)
+  if (result.status !== 200) return res.status(result.status).json({ error: result.error })
+  const { link } = result
+  const [rows] = await db.query(`
+    SELECT s.file_name, s.file_type, s.file_data
+    FROM dues d
+    JOIN due_slips s ON s.id=d.due_slip_id
+    WHERE d.id=? AND d.user_id=? AND d.person_name=? AND d.due_month=?
+      AND d.debtor_user_id=? AND d.slip_uploaded_by_user_id=?
+    LIMIT 1
+  `, [
+    req.params.id,
+    link.user_id,
+    link.person_name,
+    link.due_month,
+    req.user.id,
+    req.user.id
+  ])
+  const slip = rows[0]
+  if (!slip) return res.status(404).json({ error: "ไม่พบสลิปที่คุณส่ง" })
+  res.setHeader("Content-Type", slip.file_type || "application/octet-stream")
+  res.setHeader("Content-Disposition", `inline; filename="${safeDownloadName(slip.file_name)}"`)
+  res.send(slip.file_data)
+})
+
 app.post("/pay/:token/slip", requireAuth, upload.single("slip"), async (req, res) => {
   await ensureDuesSchema()
   if (!req.file) return res.status(400).json({ error: "Slip file required" })
@@ -2119,21 +2200,14 @@ app.post("/pay/:token/slip", requireAuth, upload.single("slip"), async (req, res
   `, [slipId, req.file.originalname, req.file.mimetype, req.user.id,
     link.user_id, link.person_name, link.due_month, req.user.id])
 
-  const [telegramChats] = await db.query(`
-    SELECT DISTINCT telegram_chat_id
-    FROM dues
-    WHERE user_id=? AND person_name=? AND due_month=? AND telegram_chat_id IS NOT NULL
-  `, [link.user_id, link.person_name, link.due_month])
-  await Promise.all(telegramChats.map(row => sendTelegramMessage(row.telegram_chat_id, [
-    `📎 ${link.person_name} ส่งสลิปแล้ว`,
-    `ยอดรวม ${Number(body.total).toFixed(2)} บาท`,
-    `เดือน ${link.due_month}`,
-    "เจ้าหนี้ตรวจสอบสลิปได้ใน Harbill"
-  ].join("\n"), {
-    reply_markup: {
-      inline_keyboard: [[{ text: "🔎 ตรวจสลิป", url: `${CLIENT_URL}/dues` }]]
-    }
-  })))
+  await notifyTelegramSlipStatus({
+    token,
+    ownerUserId: link.user_id,
+    payerUserId: req.user.id,
+    person: link.person_name,
+    month: link.due_month,
+    amount: body.total
+  })
 
   const fresh = await paymentPayloadForUser(token, req.user.id)
   res.json({ ok: true, ...fresh.body })
@@ -2171,17 +2245,15 @@ app.post("/pay/:token/items/:id/slip", requireAuth, upload.single("slip"), async
     WHERE id=? AND user_id=?
   `, [slipId, req.file.originalname, req.file.mimetype, req.user.id, due.id, link.user_id])
 
-  if (due.telegram_chat_id) {
-    await sendTelegramMessage(due.telegram_chat_id, [
-      `📎 ${link.person_name} ส่งสลิปแล้ว`,
-      `${due.title} ${Number(due.amount).toFixed(2)} บาท`,
-      "เจ้าหนี้ตรวจสอบสลิปได้ใน Harbill"
-    ].join("\n"), {
-      reply_markup: {
-        inline_keyboard: [[{ text: "🔎 ตรวจสลิป", url: `${CLIENT_URL}/dues` }]]
-      }
-    })
-  }
+  await notifyTelegramSlipStatus({
+    token,
+    ownerUserId: link.user_id,
+    payerUserId: req.user.id,
+    person: link.person_name,
+    month: link.due_month,
+    title: due.title,
+    amount: due.amount
+  })
 
   const fresh = await paymentPayloadForUser(token, req.user.id)
   res.json({ ok: true, ...fresh.body })
@@ -2513,34 +2585,36 @@ async function handleTelegramBatchAction(context, action, token) {
     }
   }
   const [memberRows] = await db.query(`
-    SELECT friend_name, username
+    SELECT friend_name, username, telegram_user_id, user_id
     FROM telegram_members
-    WHERE chat_id=? AND friend_name IS NOT NULL AND username IS NOT NULL AND username <> ''
+    WHERE chat_id=? AND friend_name IS NOT NULL
   `, [context.chatId])
-  const usernames = new Map(memberRows.map(member => [member.friend_name, member.username]))
+  const membersByName = new Map(memberRows.map(member => [member.friend_name, member]))
+  await Promise.all(paymentLinks.map(link => {
+    const member = membersByName.get(link.person)
+    if (!member?.user_id || !member.telegram_user_id) return Promise.resolve(false)
+    return sendTelegramMessage(member.telegram_user_id, [
+      "🔴 สถานะ: ยังไม่ได้ชำระ",
+      `เจ้าหนี้: ${confirmedPayload.creditor}`,
+      `เดือน: ${confirmedPayload.month}`,
+      `ยอดที่ต้องจ่าย ${Number(debtorTotals.get(link.person) || 0).toFixed(2)} บาท`
+    ].join("\n"), {
+      reply_markup: {
+        inline_keyboard: [[{ text: "💳 ชำระเงิน / ส่งสลิป", url: link.url }]]
+      }
+    })
+  }))
   const text = [
     `✅ บันทึกแล้ว ${confirmedPayload.items.length} รายการ`,
     `เจ้าหนี้: ${confirmedPayload.creditor}`,
     `เดือน: ${confirmedPayload.month}`,
-    "",
-    ...[...debtorTotals].map(([name, total]) => {
-      const username = usernames.get(name)
-      return `• ${username ? `@${username}` : name} ต้องจ่าย ${total.toFixed(2)} บาท`
-    }),
-    "",
+    `แจ้งรายละเอียดส่วนตัวให้ผู้ที่ต้องจ่ายแล้ว ${paymentLinks.filter(link => membersByName.get(link.person)?.user_id).length} คน`,
     `เลขรายการ: ${createdIds.map(id => `#${id}`).join(", ")}`
   ].join("\n")
-  const payButtons = paymentLinks.map(link => [{
-    text: `💳 ${String(link.person).slice(0, 32)} — ชำระ/ส่งสลิป`,
-    url: link.url
-  }])
   return {
     text,
     replyMarkup: {
-      inline_keyboard: [
-        ...payButtons,
-        ...telegramMainMenu(context).inline_keyboard
-      ]
+      inline_keyboard: telegramMainMenu(context).inline_keyboard
     }
   }
 }
@@ -2596,6 +2670,7 @@ async function handleTelegramPaid(context, args) {
   if (!await telegramCanManageDue(context, due)) return "Only the creator or an admin can mark this due as paid."
 
   await db.query("UPDATE dues SET status='paid', paid_at=NOW() WHERE id=? AND user_id=?", [id, context.ownerUserId])
+  await notifyTelegramPaidStatus({ ...due, status: "paid", paid_at: new Date() })
   return `Marked #${id} as paid.`
 }
 
@@ -2605,10 +2680,8 @@ async function handleTelegramList(context, args) {
   const clauses = ["user_id=?", "due_month=?"]
   const values = [context.ownerUserId, month]
 
-  if (!context.isAdmin) {
-    clauses.push("(person_name=? OR created_by_user_id=? OR created_by_telegram_id=?)")
-    values.push(context.member?.friend_name || "", context.member?.user_id || 0, context.telegramUserId)
-  }
+  clauses.push("(debtor_user_id=? OR person_name=?)")
+  values.push(context.member?.user_id || 0, context.member?.friend_name || "")
 
   const [rows] = await db.query(`
     SELECT *
@@ -2963,23 +3036,33 @@ app.post("/telegram/web-app/dues", async (req, res) => {
     totals.set(allocation.person, Math.round(((totals.get(allocation.person) || 0) + allocation.amount) * 100) / 100)
   }))
   const [memberRows] = await db.query(`
-    SELECT friend_name, username FROM telegram_members
-    WHERE chat_id=? AND friend_name IS NOT NULL AND username IS NOT NULL AND username <> ''
+    SELECT friend_name, username, telegram_user_id, user_id FROM telegram_members
+    WHERE chat_id=? AND friend_name IS NOT NULL
   `, [context.chatId])
-  const usernames = new Map(memberRows.map(member => [member.friend_name, member.username]))
+  const membersByName = new Map(memberRows.map(member => [member.friend_name, member]))
+  await Promise.all(paymentLinks.map(link => {
+    const member = membersByName.get(link.person)
+    if (!member?.user_id || !member.telegram_user_id) return Promise.resolve(false)
+    return sendTelegramMessage(member.telegram_user_id, [
+      "🔴 สถานะ: ยังไม่ได้ชำระ",
+      `เจ้าหนี้: ${creditor}`,
+      `เดือน: ${month}`,
+      `ยอดที่ต้องจ่าย ${Number(totals.get(link.person) || 0).toFixed(2)} บาท`
+    ].join("\n"), {
+      reply_markup: {
+        inline_keyboard: [[{ text: "💳 ชำระเงิน / ส่งสลิป", url: link.url }]]
+      }
+    })
+  }))
   const text = [
     `✅ บันทึกแล้ว ${parsedItems.length} รายการ`,
     `เจ้าหนี้: ${creditor}`,
     `เดือน: ${month}`,
-    "",
-    ...[...totals].map(([person, total]) => `• ${usernames.get(person) ? `@${usernames.get(person)}` : person} ต้องจ่าย ${total.toFixed(2)} บาท`)
+    `แจ้งรายละเอียดส่วนตัวให้ผู้ที่ต้องจ่ายแล้ว ${paymentLinks.filter(link => membersByName.get(link.person)?.user_id).length} คน`
   ].join("\n")
   const sent = await sendTelegramMessage(context.chatId, text, {
     reply_markup: {
-      inline_keyboard: [
-        ...paymentLinks.map(link => [{ text: `💳 ${String(link.person).slice(0, 30)} — ชำระ/ส่งสลิป`, url: link.url }]),
-        ...telegramMainMenu(context).inline_keyboard
-      ]
+      inline_keyboard: telegramMainMenu(context).inline_keyboard
     }
   })
   if (sent?.message_id) {
@@ -3100,7 +3183,9 @@ app.post("/telegram/webhook", async (req, res) => {
       })
       reply = null
     } else if (command === "รายการเดือนนี้" || quickAction === "📋 รายการเดือนนี้") {
-      reply = await handleTelegramList(context, [])
+      const privateList = await handleTelegramList(context, [])
+      await sendTelegramMessage(context.telegramUserId, privateList)
+      reply = "ส่งรายการของคุณทางแชทส่วนตัวแล้ว"
     } else if (command === "/connect") {
       reply = await handleTelegramConnect(context, args[0])
     } else if (command === "/add" || command === "/เพิ่ม") {
@@ -3112,7 +3197,9 @@ app.post("/telegram/webhook", async (req, res) => {
     } else if (command === "/paid" || command === "/จ่ายแล้ว") {
       reply = await handleTelegramPaid(context, args)
     } else if (command === "/list" || command === "/รายการ") {
-      reply = await handleTelegramList(context, args)
+      const privateList = await handleTelegramList(context, args)
+      await sendTelegramMessage(context.telegramUserId, privateList)
+      reply = "ส่งรายการของคุณทางแชทส่วนตัวแล้ว"
     } else if (command === "/name" || command === "/ชื่อ") {
       reply = await handleTelegramName(context, args)
     }
