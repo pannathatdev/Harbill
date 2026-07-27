@@ -101,6 +101,8 @@ CREATE TABLE IF NOT EXISTS dues (
   approval_status VARCHAR(32) NOT NULL DEFAULT 'approved',
   telegram_chat_id VARCHAR(64) NULL,
   telegram_message_id VARCHAR(64) NULL,
+  telegram_slip_chat_id VARCHAR(64) NULL,
+  telegram_slip_message_id VARCHAR(64) NULL,
   batch_token VARCHAR(64) NULL,
   due_slip_id INT NULL,
   slip_name VARCHAR(255) NULL,

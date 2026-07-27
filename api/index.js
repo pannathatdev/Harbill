@@ -225,6 +225,8 @@ async function ensureDuesSchema() {
         'approval_status',
         'telegram_chat_id',
         'telegram_message_id',
+        'telegram_slip_chat_id',
+        'telegram_slip_message_id',
         'batch_token'
       )
   `)
@@ -262,6 +264,12 @@ async function ensureDuesSchema() {
   }
   if (!existingDueColumns.has("telegram_message_id")) {
     await db.query("ALTER TABLE dues ADD COLUMN telegram_message_id VARCHAR(64) NULL AFTER telegram_chat_id")
+  }
+  if (!existingDueColumns.has("telegram_slip_chat_id")) {
+    await db.query("ALTER TABLE dues ADD COLUMN telegram_slip_chat_id VARCHAR(64) NULL AFTER telegram_message_id")
+  }
+  if (!existingDueColumns.has("telegram_slip_message_id")) {
+    await db.query("ALTER TABLE dues ADD COLUMN telegram_slip_message_id VARCHAR(64) NULL AFTER telegram_slip_chat_id")
   }
   if (!existingDueColumns.has("batch_token")) {
     await db.query("ALTER TABLE dues ADD COLUMN batch_token VARCHAR(64) NULL AFTER telegram_message_id")
@@ -1921,7 +1929,7 @@ async function paymentPayloadForUser(token, viewerUserId) {
   }
 }
 
-async function notifyTelegramSlipStatus({ token, ownerUserId, payerUserId, person, month, title = "", amount }) {
+async function notifyTelegramSlipStatus({ token, ownerUserId, payerUserId, person, month, title = "", amount, dueId = null }) {
   const [payerRows] = await db.query(`
     SELECT DISTINCT telegram_user_id
     FROM telegram_members
@@ -1944,33 +1952,81 @@ async function notifyTelegramSlipStatus({ token, ownerUserId, payerUserId, perso
     WHERE user_id=? AND person_name=? AND due_month=?
       AND created_by_telegram_id IS NOT NULL AND created_by_telegram_id <> ''
   `, [ownerUserId, person, month])
-  await Promise.all(creatorRows.map(creator => sendTelegramMessage(creator.created_by_telegram_id, [
-    `📎 ${person} ส่งสลิปแล้ว`,
-    title || `ยอดรวมเดือน ${month}`,
-    `ยอด ${Number(amount || 0).toFixed(2)} บาท`,
-    "สถานะ: รอตรวจสอบ"
-  ].join("\n"), {
-    reply_markup: {
-      inline_keyboard: [[{ text: "🔎 ตรวจสลิปใน Harbill", url: `${CLIENT_URL}/dues` }]]
+  for (const creator of creatorRows) {
+    const sent = await sendTelegramMessage(creator.created_by_telegram_id, [
+      `📎 ${person} ส่งสลิปแล้ว`,
+      title || `ยอดรวมเดือน ${month}`,
+      `ยอด ${Number(amount || 0).toFixed(2)} บาท`,
+      "🟡 สถานะ: รอตรวจสอบ"
+    ].join("\n"), {
+      reply_markup: {
+        inline_keyboard: [[{ text: "🔎 ตรวจสลิปใน Harbill", url: `${CLIENT_URL}/dues` }]]
+      }
+    })
+    if (sent?.message_id) {
+      const dueClause = dueId ? "id=?" : "user_id=? AND person_name=? AND due_month=? AND status='pending'"
+      const dueValues = dueId ? [dueId] : [ownerUserId, person, month]
+      await db.query(`
+        UPDATE dues
+        SET telegram_slip_chat_id=?, telegram_slip_message_id=?
+        WHERE ${dueClause}
+      `, [String(creator.created_by_telegram_id), String(sent.message_id), ...dueValues])
     }
-  })))
+  }
 }
 
 async function notifyTelegramPaidStatus(due) {
-  if (!due?.debtor_user_id) return
-  const [members] = await db.query(`
-    SELECT DISTINCT telegram_user_id
-    FROM telegram_members
-    WHERE user_id=? AND telegram_user_id IS NOT NULL
-  `, [due.debtor_user_id])
-  await Promise.all(members.map(member => (
-    sendTelegramMessage(member.telegram_user_id, [
-      "🟢 สถานะ: ชำระแล้ว",
-      `รายการ: ${due.title}`,
-      `ยอด ${Number(due.amount || 0).toFixed(2)} บาท`,
-      `เดือน ${due.due_month}`
-    ].join("\n"))
-  )))
+  if (!due) return
+  const [relatedRows] = await db.query(`
+    SELECT *
+    FROM dues
+    WHERE user_id=? AND person_name=? AND due_month=? AND due_slip_id IS NOT NULL
+  `, [due.user_id, due.person_name, due.due_month])
+  const paidCount = relatedRows.filter(item => item.status === "paid").length
+  const pendingCount = relatedRows.filter(item => item.status === "pending").length
+  const allPaid = relatedRows.length > 0 && paidCount === relatedRows.length
+  const statusText = allPaid
+    ? "🟢 สถานะ: ชำระแล้ว"
+    : pendingCount > 0
+      ? `🟡 สถานะ: รอตรวจ ${pendingCount} รายการ · ชำระแล้ว ${paidCount}/${relatedRows.length}`
+      : "🔴 สถานะ: ยังไม่ได้ชำระ"
+  const messageTargets = new Map()
+  relatedRows.forEach(item => {
+    if (item.telegram_slip_chat_id && item.telegram_slip_message_id) {
+      messageTargets.set(
+        `${item.telegram_slip_chat_id}:${item.telegram_slip_message_id}`,
+        item
+      )
+    }
+  })
+  for (const item of messageTargets.values()) {
+    await editTelegramMessage(item.telegram_slip_chat_id, item.telegram_slip_message_id, [
+      `📎 ${due.person_name} ส่งสลิปแล้ว`,
+      relatedRows.length === 1 ? due.title : `ยอดเดือน ${due.due_month}`,
+      `ยอดรวม ${relatedRows.reduce((sum, row) => sum + Number(row.amount || 0), 0).toFixed(2)} บาท`,
+      statusText
+    ].join("\n"), {
+      reply_markup: {
+        inline_keyboard: [[{ text: "🔎 ดูใน Harbill", url: `${CLIENT_URL}/dues` }]]
+      }
+    })
+  }
+
+  if (due.debtor_user_id) {
+    const [members] = await db.query(`
+      SELECT DISTINCT telegram_user_id
+      FROM telegram_members
+      WHERE user_id=? AND telegram_user_id IS NOT NULL
+    `, [due.debtor_user_id])
+    await Promise.all(members.map(member => (
+      sendTelegramMessage(member.telegram_user_id, [
+        statusText,
+        `รายการ: ${due.title}`,
+        `ยอด ${Number(due.amount || 0).toFixed(2)} บาท`,
+        `เดือน ${due.due_month}`
+      ].join("\n"))
+    )))
+  }
 }
 
 app.get("/dues", requireAuth, async (req, res) => {
@@ -2069,7 +2125,7 @@ app.patch("/dues/:id", requireAuth, async (req, res) => {
   await db.query(`UPDATE dues SET ${fields.join(", ")} WHERE id=? AND user_id=?`, values)
   const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
   if (!rows[0]) return res.status(404).json({ error: "Due item not found" })
-  if (req.body.status === "paid") await notifyTelegramPaidStatus(rows[0])
+  if (req.body.status !== undefined) await notifyTelegramPaidStatus(rows[0])
   res.json(mapDue(rows[0]))
 })
 
@@ -2263,7 +2319,8 @@ app.post("/pay/:token/items/:id/slip", requireAuth, upload.single("slip"), async
     person: link.person_name,
     month: link.due_month,
     title: due.title,
-    amount: due.amount
+    amount: due.amount,
+    dueId: due.id
   })
 
   const fresh = await paymentPayloadForUser(token, req.user.id)
