@@ -1878,14 +1878,22 @@ async function paymentPayloadForUser(token, viewerUserId) {
     return { status: 403, error: "รายการนี้ไม่ได้ผูกกับบัญชีของคุณ กรุณาเชื่อม Telegram กับ Harbill ก่อน" }
   }
 
+  // Older Telegram/batch dues may have been created before debtor_user_id was
+  // stored on each row. The verified payment link is authoritative, so backfill
+  // those rows before loading the payer's balance.
+  await db.query(`
+    UPDATE dues
+    SET debtor_user_id=?
+    WHERE user_id=? AND person_name=? AND due_month=? AND debtor_user_id IS NULL
+  `, [debtorUserId, link.user_id, link.person_name, link.due_month])
+
   const [items] = await db.query(`
     SELECT d.id, d.person_name, d.debtor_user_id, d.title, d.amount, d.due_month, d.status, d.note, d.due_slip_id,
       d.slip_name, d.slip_type, d.slip_uploaded_at, d.paid_at, d.created_at, d.updated_at,
       s.check_status, s.check_note
     FROM dues d
     LEFT JOIN due_slips s ON s.id = d.due_slip_id
-    WHERE d.user_id=? AND d.person_name=? AND d.due_month=? AND d.status <> 'paid'
-      AND d.debtor_user_id=?
+    WHERE d.user_id=? AND d.person_name=? AND d.due_month=? AND d.debtor_user_id=?
     ORDER BY d.created_at DESC
   `, [link.user_id, link.person_name, link.due_month, debtorUserId])
 
@@ -1902,8 +1910,11 @@ async function paymentPayloadForUser(token, viewerUserId) {
     body: {
       person: link.person_name,
       month: link.due_month,
-      items: items.map(mapDue),
-      total: items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+      items: items.filter(item => item.status !== "paid").map(mapDue),
+      receipts: items.filter(item => item.due_slip_id).map(mapDue),
+      total: items
+        .filter(item => item.status !== "paid")
+        .reduce((sum, item) => sum + Number(item.amount || 0), 0),
       payment: ownerRows[0] || null
     },
     link
@@ -2497,6 +2508,14 @@ async function handleTelegramBatchAction(context, action, token) {
   if (!/^[a-f0-9]{32}$/.test(token || "")) return "รายการร่างไม่ถูกต้อง"
   if (action !== "confirm" && action !== "cancel") return "คำสั่งรายการร่างไม่ถูกต้อง"
 
+  const [linkedMemberRows] = await db.query(`
+    SELECT friend_name, user_id
+    FROM telegram_members
+    WHERE chat_id=? AND user_id IS NOT NULL AND friend_name IS NOT NULL
+  `, [context.chatId])
+  const linkedUsersByName = new Map(
+    linkedMemberRows.map(member => [member.friend_name, Number(member.user_id)])
+  )
   const connection = await db.getConnection()
   const createdIds = []
   const paymentLinks = []
@@ -2530,13 +2549,14 @@ async function handleTelegramBatchAction(context, action, token) {
         await connection.query("INSERT IGNORE INTO friends (user_id, name) VALUES (?, ?)", [context.ownerUserId, allocation.name])
         const [result] = await connection.query(`
           INSERT INTO dues (
-            user_id, created_by_user_id, created_by_telegram_id, created_by_name,
+            user_id, created_by_user_id, debtor_user_id, created_by_telegram_id, created_by_name,
             person_name, creditor_name, title, amount, due_month, status, note,
             source, approval_status, telegram_chat_id, batch_token
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, 'telegram', 'approved', ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, 'telegram', 'approved', ?, ?)
         `, [
           context.ownerUserId,
           context.member.user_id,
+          linkedUsersByName.get(allocation.name) || null,
           context.telegramUserId,
           payload.creatorName,
           allocation.name,
@@ -2553,15 +2573,21 @@ async function handleTelegramBatchAction(context, action, token) {
     }
     const debtorNames = [...new Set(payload.items.flatMap(item => item.allocations.map(allocation => allocation.name)))]
     for (const person of debtorNames) {
+      const debtorUserId = linkedUsersByName.get(person) || null
       const [existingLinks] = await connection.query(
-        "SELECT token FROM due_payment_links WHERE user_id=? AND person_name=? AND due_month=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT token, debtor_user_id FROM due_payment_links WHERE user_id=? AND person_name=? AND due_month=? ORDER BY created_at DESC LIMIT 1",
         [context.ownerUserId, person, payload.month]
       )
       const paymentToken = existingLinks[0]?.token || crypto.randomBytes(18).toString("hex")
       if (!existingLinks[0]) {
         await connection.query(
-          "INSERT INTO due_payment_links (token, user_id, person_name, due_month) VALUES (?, ?, ?, ?)",
-          [paymentToken, context.ownerUserId, person, payload.month]
+          "INSERT INTO due_payment_links (token, user_id, debtor_user_id, person_name, due_month) VALUES (?, ?, ?, ?, ?)",
+          [paymentToken, context.ownerUserId, debtorUserId, person, payload.month]
+        )
+      } else if (!existingLinks[0].debtor_user_id && debtorUserId) {
+        await connection.query(
+          "UPDATE due_payment_links SET debtor_user_id=? WHERE token=?",
+          [debtorUserId, paymentToken]
         )
       }
       paymentLinks.push({

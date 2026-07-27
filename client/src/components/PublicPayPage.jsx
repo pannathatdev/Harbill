@@ -102,6 +102,8 @@ export default function PublicPayPage({ darkMode = true }) {
   const [uploadingItemId, setUploadingItemId] = useState(null)
   const [uploadMessage, setUploadMessage] = useState("")
   const [connectingTelegram, setConnectingTelegram] = useState(false)
+  const [viewingSlip, setViewingSlip] = useState(null)
+  const [loadingSlipId, setLoadingSlipId] = useState(null)
 
   async function connectTelegram() {
     if (connectingTelegram) return
@@ -117,14 +119,27 @@ export default function PublicPayPage({ darkMode = true }) {
   }
 
   async function viewUploadedSlip(item) {
+    if (loadingSlipId) return
+    setLoadingSlipId(item.id)
     try {
       const blob = await api.getPublicDueItemSlipBlob(token, item.id)
       const url = URL.createObjectURL(blob)
-      window.open(url, "_blank", "noopener,noreferrer")
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      setViewingSlip({
+        url,
+        type: blob.type || item.slipType || "",
+        name: item.slipName || "สลิป",
+        title: item.title
+      })
     } catch (err) {
       setUploadMessage(err.message || "เปิดสลิปไม่ได้")
+    } finally {
+      setLoadingSlipId(null)
     }
+  }
+
+  function closeViewingSlip() {
+    if (viewingSlip?.url) URL.revokeObjectURL(viewingSlip.url)
+    setViewingSlip(null)
   }
 
   useEffect(() => {
@@ -328,8 +343,8 @@ export default function PublicPayPage({ darkMode = true }) {
                       {item.note && <p className={`mt-1 text-xs ${muted}`}>{item.note}</p>}
                       {item.slipName && <p className="mt-1 text-xs font-semibold text-amber-500">ส่งสลิปแล้ว รอตรวจ</p>}
                       {item.slipName && (
-                        <button type="button" onClick={() => viewUploadedSlip(item)} className="mt-2 text-xs font-bold text-sky-400 underline">
-                          ดูสลิปที่ส่ง
+                        <button type="button" onClick={() => viewUploadedSlip(item)} disabled={loadingSlipId === item.id} className="mt-2 text-xs font-bold text-sky-400 underline disabled:opacity-60">
+                          {loadingSlipId === item.id ? "กำลังเปิด..." : "ดูสลิปที่ส่ง"}
                         </button>
                       )}
                       <p className="mt-2 text-lg font-black">฿{formatMoney(item.amount)}</p>
@@ -462,10 +477,56 @@ export default function PublicPayPage({ darkMode = true }) {
                   )}
                 </div>
               )}
+
+              {data.receipts?.length > 0 && (
+                <div className={`mt-4 rounded-2xl border p-4 ${panel}`}>
+                  <p className="text-sm font-black">ประวัติสลิปของฉัน</p>
+                  <div className="mt-3 space-y-2">
+                    {data.receipts.map(item => (
+                      <button
+                        key={`receipt-${item.id}`}
+                        type="button"
+                        onClick={() => viewUploadedSlip(item)}
+                        disabled={loadingSlipId === item.id}
+                        className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left ${button}`}
+                      >
+                        <span>
+                          <span className="block text-sm font-bold">{item.title}</span>
+                          <span className={`mt-1 block text-xs ${item.status === "paid" ? "text-emerald-400" : "text-amber-400"}`}>
+                            {item.status === "paid" ? "ชำระแล้ว" : "ส่งแล้ว · รอตรวจ"}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-xs font-bold text-sky-400">
+                          {loadingSlipId === item.id ? "กำลังเปิด..." : "ดูสลิป"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </section>
       </div>
+
+      {viewingSlip && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3" onClick={closeViewingSlip}>
+          <section className="w-full max-w-2xl rounded-2xl bg-slate-900 p-4 text-white shadow-2xl" onClick={event => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-black">{viewingSlip.title}</p>
+                <p className="mt-1 text-xs text-slate-400">{viewingSlip.name}</p>
+              </div>
+              <button type="button" onClick={closeViewingSlip} className="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold">ปิด</button>
+            </div>
+            {viewingSlip.type.startsWith("image/") ? (
+              <img src={viewingSlip.url} alt={viewingSlip.name} className="mt-4 max-h-[75vh] w-full rounded-xl object-contain" />
+            ) : (
+              <iframe src={viewingSlip.url} title={viewingSlip.name} className="mt-4 h-[70vh] w-full rounded-xl bg-white" />
+            )}
+          </section>
+        </div>
+      )}
     </main>
   )
 }
