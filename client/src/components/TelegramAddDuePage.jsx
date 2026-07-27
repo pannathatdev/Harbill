@@ -16,7 +16,9 @@ function emptyItem() {
 export default function TelegramAddDuePage() {
   const params = new URLSearchParams(window.location.search)
   const webApp = tg()
-  const chatId = params.get("chat_id") || webApp?.initDataUnsafe?.start_param || ""
+  const startParam = webApp?.initDataUnsafe?.start_param || ""
+  const paymentToken = startParam.match(/^pay_([a-f0-9]+)$/i)?.[1] || ""
+  const chatId = params.get("chat_id") || (paymentToken ? "" : startParam)
   const initData = webApp?.initData || ""
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -34,6 +36,31 @@ export default function TelegramAddDuePage() {
   }, [webApp])
 
   useEffect(() => {
+    if (!paymentToken) return
+    if (!initData) {
+      setError("กรุณาเปิดลิงก์ชำระจาก Telegram")
+      setLoading(false)
+      return
+    }
+    let cancelled = false
+    api.authenticateTelegramWebApp(initData)
+      .then(result => {
+        if (cancelled) return
+        localStorage.setItem("token", result.token)
+        localStorage.setItem("user", JSON.stringify(result.user))
+        window.location.replace(`/pay/${paymentToken}`)
+      })
+      .catch(err => {
+        if (!cancelled) setError(err.message || "เข้าสู่ระบบด้วย Telegram ไม่สำเร็จ")
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [initData, paymentToken])
+
+  useEffect(() => {
+    if (paymentToken) return
     if (!initData || !chatId) {
       setError("เปิดหน้านี้จากปุ่มใน Telegram Group เท่านั้น")
       setLoading(false)
@@ -52,7 +79,7 @@ export default function TelegramAddDuePage() {
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [chatId, initData])
+  }, [chatId, initData, paymentToken])
 
   const people = useMemo(() => {
     const currentName = context?.member?.name || ""

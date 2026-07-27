@@ -1167,6 +1167,29 @@ app.post("/telegram/connect-token", requireAuth, async (req, res) => {
   })
 })
 
+app.post("/telegram/web-app/auth", async (req, res) => {
+  await ensureTelegramSchema()
+  const verified = verifyTelegramWebAppInitData(req.body?.initData)
+  if (!verified) return res.status(401).json({ error: "Invalid Telegram session" })
+
+  const [rows] = await db.query(`
+    SELECT u.*
+    FROM telegram_members tm
+    JOIN users u ON u.id=tm.user_id
+    WHERE tm.telegram_user_id=? AND tm.user_id IS NOT NULL
+    ORDER BY tm.updated_at DESC
+    LIMIT 1
+  `, [String(verified.user.id)])
+  const user = rows[0]
+  if (!user) {
+    return res.status(403).json({ error: "กรุณาเชื่อม Telegram กับ Harbill หนึ่งครั้งก่อน" })
+  }
+  res.json({
+    token: signToken(user),
+    user: { id: user.id, email: user.email, name: user.name, avatar: user.avatar }
+  })
+})
+
 app.post("/analytics/page-view", optionalAuth, async (req, res) => {
   await ensureAnalyticsSchema()
 
@@ -2471,7 +2494,7 @@ async function handleTelegramBatchAction(context, action, token) {
       }
       paymentLinks.push({
         person,
-        url: `${CLIENT_URL}/pay/${paymentToken}?name=${encodeURIComponent(person)}`
+        url: telegramPaymentUrl(paymentToken, person)
       })
     }
     await connection.query("DELETE FROM telegram_due_drafts WHERE token=?", [token])
@@ -2639,6 +2662,24 @@ function telegramMainMenu(context) {
   }
 }
 
+function telegramReplyKeyboard() {
+  return {
+    keyboard: [
+      [
+        { text: "➕ เพิ่มรายการ" },
+        { text: "📋 รายการเดือนนี้" }
+      ],
+      [
+        { text: "🔄 เปิดเมนู" },
+        { text: "ℹ️ วิธีใช้" }
+      ]
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
+    input_field_placeholder: "เลือกคำสั่ง Harbill…"
+  }
+}
+
 function telegramBatchHelpText() {
   return [
     "ส่งข้อความหนึ่งชุดในรูปแบบนี้:",
@@ -2669,11 +2710,47 @@ function telegramBatchInputPrompt() {
   ].join("\n")
 }
 
+function telegramPaymentUrl(paymentToken, person) {
+  const botUsername = String(process.env.TELEGRAM_BOT_USERNAME || "").replace(/^@/, "").trim()
+  const miniAppShortName = String(process.env.TELEGRAM_WEBAPP_SHORT_NAME || "").trim()
+  if (botUsername && miniAppShortName) {
+    return `https://t.me/${botUsername}/${miniAppShortName}?startapp=pay_${paymentToken}`
+  }
+  return `${CLIENT_URL}/pay/${paymentToken}?name=${encodeURIComponent(person)}`
+}
+
+let telegramCommandsConfigured = false
+
+async function ensureTelegramCommands() {
+  if (telegramCommandsConfigured) return
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  if (!token) return
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        commands: [
+          { command: "menu", description: "เปิดกล่องคำสั่ง Harbill" },
+          { command: "list", description: "ดูรายการเดือนนี้" },
+          { command: "batch", description: "เพิ่มหลายรายการ" },
+          { command: "connect", description: "เชื่อมบัญชี Harbill" },
+          { command: "help", description: "ดูวิธีใช้งาน" }
+        ],
+        scope: { type: "all_group_chats" }
+      })
+    })
+    if (response.ok) telegramCommandsConfigured = true
+  } catch (err) {
+    console.error("Telegram command setup failed:", err.message)
+  }
+}
+
 async function sendTelegramMenu(context) {
-  await sendTelegramMessage(context.chatId, "ซ่อนเมนูแบบเดิมแล้ว", {
-    reply_markup: { remove_keyboard: true }
+  await sendTelegramMessage(context.chatId, "เมนู Harbill พร้อมใช้งานแล้ว", {
+    reply_markup: telegramReplyKeyboard()
   })
-  await sendTelegramMessage(context.chatId, "Harbill — จัดการรายการติดตามหนี้", {
+  await sendTelegramMessage(context.chatId, "เลือกเพิ่มรายการจากปุ่มด้านล่าง หรือเปิดแบบฟอร์มจากปุ่มนี้", {
     reply_markup: telegramMainMenu(context)
   })
 }
@@ -2858,7 +2935,7 @@ app.post("/telegram/web-app/dues", async (req, res) => {
       paymentLinks.push({
         person,
         linked: Boolean(debtor.debtorUserId || existing[0]?.debtor_user_id),
-        url: `${CLIENT_URL}/pay/${paymentToken}?name=${encodeURIComponent(person)}`
+        url: telegramPaymentUrl(paymentToken, person)
       })
     }
     await connection.commit()
@@ -2909,6 +2986,7 @@ app.post("/telegram/webhook", async (req, res) => {
     const provided = String(req.headers["x-telegram-bot-api-secret-token"] || req.headers["x-telegram-secret"] || req.query.secret || "")
     if (provided !== secret) return res.status(401).json({ error: "Unauthorized" })
   }
+  await ensureTelegramCommands()
 
   const callbackQuery = req.body?.callback_query
   const message = req.body?.message || req.body?.edited_message || (callbackQuery?.message ? { ...callbackQuery.message, from: callbackQuery.from } : null)
@@ -2944,6 +3022,7 @@ app.post("/telegram/webhook", async (req, res) => {
   }
 
   const { command, args, body } = parseTelegramText(text)
+  const quickAction = String(text).trim()
   const isBatchInputReply = Boolean(
     req.body?.message?.reply_to_message?.from?.is_bot &&
     req.body.message.reply_to_message.text?.startsWith("✏️ ตอบข้อความนี้ด้วยรายการ")
@@ -2968,10 +3047,10 @@ app.post("/telegram/webhook", async (req, res) => {
         })
         if (edited) reply = null
       }
-    } else if (command === "/start" || command === "/menu" || command === "เมนู") {
+    } else if (command === "/start" || command === "/menu" || command === "เมนู" || quickAction === "🔄 เปิดเมนู") {
       await sendTelegramMenu(context)
       reply = null
-    } else if (command === "/help" || command === "วิธีใช้") {
+    } else if (command === "/help" || command === "วิธีใช้" || quickAction === "ℹ️ วิธีใช้") {
       await sendTelegramMessage(context.chatId, [
         "Harbill commands:",
         "กดปุ่มเพิ่มรายการเพื่อเปิดฟอร์มใน Telegram",
@@ -3003,12 +3082,12 @@ app.post("/telegram/webhook", async (req, res) => {
         }
       })
       reply = null
-    } else if (command === "เพิ่มรายการ") {
+    } else if (command === "เพิ่มรายการ" || quickAction === "➕ เพิ่มรายการ") {
       await sendTelegramMessage(context.chatId, telegramBatchHelpText(), {
         reply_markup: telegramMainMenu(context)
       })
       reply = null
-    } else if (command === "รายการเดือนนี้") {
+    } else if (command === "รายการเดือนนี้" || quickAction === "📋 รายการเดือนนี้") {
       reply = await handleTelegramList(context, [])
     } else if (command === "/connect") {
       reply = await handleTelegramConnect(context, args[0])
