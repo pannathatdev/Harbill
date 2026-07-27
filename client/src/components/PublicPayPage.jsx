@@ -101,6 +101,20 @@ export default function PublicPayPage({ darkMode = true }) {
   const [uploadingSlip, setUploadingSlip] = useState(false)
   const [uploadingItemId, setUploadingItemId] = useState(null)
   const [uploadMessage, setUploadMessage] = useState("")
+  const [connectingTelegram, setConnectingTelegram] = useState(false)
+
+  async function connectTelegram() {
+    if (connectingTelegram) return
+    setConnectingTelegram(true)
+    try {
+      const connection = await api.createTelegramConnectToken()
+      if (!connection.deepLink) throw new Error("ไม่พบลิงก์บอท Telegram")
+      window.location.href = connection.deepLink
+    } catch (err) {
+      setError(err.message || "สร้างลิงก์เชื่อม Telegram ไม่สำเร็จ")
+      setConnectingTelegram(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -263,7 +277,26 @@ export default function PublicPayPage({ darkMode = true }) {
           )}
           {error && !loading && (
             <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">
-              {error}
+              <p>{error}</p>
+              {error.includes("เชื่อม Telegram") || error.includes("ไม่ได้ผูกกับบัญชี") ? (
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={connectTelegram}
+                    disabled={connectingTelegram}
+                    className="rounded-xl bg-sky-600 px-4 py-3 font-bold text-white disabled:opacity-60"
+                  >
+                    {connectingTelegram ? "กำลังเปิด Telegram..." : "เชื่อม Telegram ตอนนี้"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="rounded-xl border border-rose-200 bg-white px-4 py-3 font-bold text-rose-700"
+                  >
+                    ตรวจสอบอีกครั้ง
+                  </button>
+                </div>
+              ) : null}
             </div>
           )}
           {data && !loading && (

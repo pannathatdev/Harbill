@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS telegram_members (
   role VARCHAR(32) NOT NULL DEFAULT 'member',
   username VARCHAR(255) NULL,
   display_name VARCHAR(255) NULL,
+  onboarding_message_id VARCHAR(64) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (chat_id, telegram_user_id),

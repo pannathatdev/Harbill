@@ -332,6 +332,7 @@ async function ensureTelegramSchema() {
       role VARCHAR(32) NOT NULL DEFAULT 'member',
       username VARCHAR(255) NULL,
       display_name VARCHAR(255) NULL,
+      onboarding_message_id VARCHAR(64) NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (chat_id, telegram_user_id),
@@ -341,6 +342,16 @@ async function ensureTelegramSchema() {
       CONSTRAINT fk_telegram_members_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `)
+  const [telegramMemberColumns] = await db.query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'telegram_members'
+      AND COLUMN_NAME = 'onboarding_message_id'
+  `)
+  if (!telegramMemberColumns[0]) {
+    await db.query("ALTER TABLE telegram_members ADD COLUMN onboarding_message_id VARCHAR(64) NULL AFTER display_name")
+  }
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS telegram_connect_tokens (
@@ -730,9 +741,41 @@ async function getTelegramContext(message) {
 
   const [chatRows] = await db.query("SELECT * FROM telegram_chats WHERE chat_id=? AND enabled=1", [chatId])
   const linkedChat = chatRows[0] || null
-  const [memberRows] = linkedChat
+  let [memberRows] = linkedChat
     ? await db.query("SELECT * FROM telegram_members WHERE chat_id=? AND telegram_user_id=?", [chatId, telegramUserId])
     : [[]]
+  if (linkedChat && !memberRows[0] && !from.is_bot) {
+    const displayName = telegramName(from)
+    await upsertTelegramMember({
+      chatId,
+      telegramUserId,
+      friendName: displayName || from.username || `tg-${telegramUserId}`,
+      role: "member",
+      username: from.username || null,
+      displayName
+    })
+    const mention = from.username ? `@${from.username}` : displayName
+    const sent = await sendTelegramMessage(chatId, [
+      `👋 ${mention || "สมาชิกใหม่"} กรุณาเชื่อมบัญชี Harbill ก่อนใช้งาน`,
+      "เชื่อมเพียงครั้งเดียว หลังเชื่อมสำเร็จข้อความนี้จะหายไปอัตโนมัติ"
+    ].join("\n"), {
+      reply_markup: {
+        inline_keyboard: [[
+          { text: "🔗 เชื่อมบัญชีตอนนี้", url: `${CLIENT_URL}/telegram/connect` }
+        ]]
+      }
+    })
+    if (sent?.message_id) {
+      await db.query(`
+        UPDATE telegram_members SET onboarding_message_id=?
+        WHERE chat_id=? AND telegram_user_id=? AND user_id IS NULL
+      `, [String(sent.message_id), chatId, telegramUserId])
+    }
+    ;[memberRows] = await db.query(
+      "SELECT * FROM telegram_members WHERE chat_id=? AND telegram_user_id=?",
+      [chatId, telegramUserId]
+    )
+  }
   const member = memberRows[0] || null
   const envAdmin = telegramAdminIds().includes(telegramUserId)
   const isAdmin = envAdmin || member?.role === "admin"
@@ -1113,10 +1156,14 @@ app.post("/telegram/connect-token", requireAuth, async (req, res) => {
     "INSERT INTO telegram_connect_tokens (token, user_id, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))",
     [token, req.user.id, expiresMinutes]
   )
+  const botUsername = String(process.env.TELEGRAM_BOT_USERNAME || "harbill_group_bot")
+    .replace(/^@/, "")
+    .trim()
   res.json({
     token,
     command: `/connect ${token}`,
-    expiresMinutes
+    expiresMinutes,
+    deepLink: `https://t.me/${botUsername}?start=connect_${token}`
   })
 })
 
@@ -2170,6 +2217,72 @@ async function handleTelegramConnect(context, token) {
   return `Connected ${row.name || row.email} as ${role}.`
 }
 
+async function handleTelegramPrivateConnect(message, token) {
+  await ensureTelegramSchema()
+  await ensureDuesSchema()
+  const telegramUserId = String(message?.from?.id || "")
+  if (!telegramUserId || !token) return "ลิงก์เชื่อมบัญชีไม่ถูกต้อง กรุณากลับไปสร้างลิงก์ใหม่จาก Harbill"
+
+  const [tokenRows] = await db.query(`
+    SELECT t.*, u.name, u.email
+    FROM telegram_connect_tokens t
+    JOIN users u ON u.id=t.user_id
+    WHERE t.token=? AND t.used_at IS NULL AND t.expires_at > NOW()
+    LIMIT 1
+  `, [token])
+  const row = tokenRows[0]
+  if (!row) return "ลิงก์เชื่อมบัญชีหมดอายุหรือถูกใช้งานแล้ว กรุณากลับไปหน้า Harbill แล้วลองใหม่"
+
+  const [onboardingRows] = await db.query(`
+    SELECT chat_id, onboarding_message_id
+    FROM telegram_members
+    WHERE telegram_user_id=? AND onboarding_message_id IS NOT NULL
+  `, [telegramUserId])
+  const [result] = await db.query(`
+    UPDATE telegram_members
+    SET user_id=?, username=?, display_name=?
+    WHERE telegram_user_id=?
+  `, [
+    row.user_id,
+    message.from.username || null,
+    telegramName(message.from),
+    telegramUserId
+  ])
+  if (!result.affectedRows) {
+    return "ยังไม่พบคุณในกลุ่ม Harbill กรุณาเข้ากลุ่มและพิมพ์ /menu ในกลุ่มก่อน แล้วกลับมากดเชื่อมอีกครั้ง"
+  }
+
+  await db.query(`
+    UPDATE dues d
+    JOIN telegram_members tm
+      ON tm.chat_id=d.telegram_chat_id
+     AND tm.friend_name=d.person_name
+    SET d.debtor_user_id=?
+    WHERE tm.telegram_user_id=? AND d.status <> 'paid'
+  `, [row.user_id, telegramUserId])
+  await db.query(`
+    UPDATE due_payment_links link_row
+    JOIN dues d
+      ON d.user_id=link_row.user_id
+     AND d.person_name=link_row.person_name
+     AND d.due_month=link_row.due_month
+    SET link_row.debtor_user_id=?
+    WHERE d.debtor_user_id=? AND d.status <> 'paid'
+  `, [row.user_id, row.user_id])
+  await db.query("UPDATE telegram_connect_tokens SET used_at=NOW() WHERE token=?", [token])
+  await Promise.all(onboardingRows.map(item => (
+    deleteTelegramMessage(item.chat_id, item.onboarding_message_id).catch(() => false)
+  )))
+  await db.query(`
+    UPDATE telegram_members SET onboarding_message_id=NULL
+    WHERE telegram_user_id=?
+  `, [telegramUserId])
+  return [
+    `✅ เชื่อม Telegram กับบัญชี ${row.name || row.email} สำเร็จแล้ว`,
+    "กลับไปหน้าชำระเงิน แล้วกด “ตรวจสอบอีกครั้ง” ได้เลย"
+  ].join("\n")
+}
+
 async function handleTelegramAdd(context, body) {
   if (!context.linkedChat) return "This chat is not connected. Use /connect from Harbill first."
   if (!context.member?.user_id) return "Please connect your Google account before creating items."
@@ -2565,6 +2678,54 @@ async function sendTelegramMenu(context) {
   })
 }
 
+async function handleTelegramNewMembers(message) {
+  await ensureTelegramSchema()
+  const chatId = String(message?.chat?.id || "")
+  const newMembers = Array.isArray(message?.new_chat_members)
+    ? message.new_chat_members.filter(member => member?.id && !member.is_bot)
+    : []
+  if (!chatId || newMembers.length === 0) return
+
+  const allowedChatIds = telegramAllowedChatIds()
+  if (allowedChatIds.length > 0 && !allowedChatIds.includes(chatId)) return
+
+  const [chatRows] = await db.query(
+    "SELECT * FROM telegram_chats WHERE chat_id=? AND enabled=1",
+    [chatId]
+  )
+  if (!chatRows[0]) return
+
+  for (const member of newMembers) {
+    const displayName = telegramName(member)
+    const telegramUserId = String(member.id)
+    await upsertTelegramMember({
+      chatId,
+      telegramUserId,
+      friendName: displayName || member.username || `tg-${member.id}`,
+      role: "member",
+      username: member.username || null,
+      displayName
+    })
+    const mention = member.username ? `@${member.username}` : displayName
+    const sent = await sendTelegramMessage(chatId, [
+      `👋 ${mention || "สมาชิกใหม่"} กรุณาเชื่อมบัญชี Harbill ก่อนใช้งาน`,
+      "เชื่อมเพียงครั้งเดียว หลังเชื่อมสำเร็จข้อความนี้จะหายไปอัตโนมัติ"
+    ].join("\n"), {
+      reply_markup: {
+        inline_keyboard: [[
+          { text: "🔗 เชื่อมบัญชีตอนนี้", url: `${CLIENT_URL}/telegram/connect` }
+        ]]
+      }
+    })
+    if (sent?.message_id) {
+      await db.query(`
+        UPDATE telegram_members SET onboarding_message_id=?
+        WHERE chat_id=? AND telegram_user_id=? AND user_id IS NULL
+      `, [String(sent.message_id), chatId, telegramUserId])
+    }
+  }
+}
+
 app.post("/telegram/web-app/context", async (req, res) => {
   const context = await getTelegramWebAppContext(req.body?.initData, req.body?.chatId)
   if (context.status !== 200) return res.status(context.status).json({ error: context.error })
@@ -2751,8 +2912,30 @@ app.post("/telegram/webhook", async (req, res) => {
 
   const callbackQuery = req.body?.callback_query
   const message = req.body?.message || req.body?.edited_message || (callbackQuery?.message ? { ...callbackQuery.message, from: callbackQuery.from } : null)
+  if (message?.new_chat_members?.length) {
+    try {
+      await handleTelegramNewMembers(message)
+    } catch (err) {
+      console.error("Telegram new member handling failed:", err)
+    }
+    return res.json({ ok: true })
+  }
   const text = req.body?.message?.text || req.body?.edited_message?.text || req.body?.callback_query?.data || ""
   if (!message || !text) return res.json({ ok: true })
+
+  const privateStartMatch = message.chat?.type === "private"
+    ? String(text).trim().match(/^\/start(?:@\w+)?\s+connect_([a-f0-9]{32})$/i)
+    : null
+  if (privateStartMatch) {
+    try {
+      const reply = await handleTelegramPrivateConnect(message, privateStartMatch[1])
+      await sendTelegramMessage(String(message.chat.id), reply)
+    } catch (err) {
+      console.error("Telegram private connect failed:", err)
+      await sendTelegramMessage(String(message.chat.id), "เชื่อมบัญชีไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")
+    }
+    return res.json({ ok: true })
+  }
 
   const context = await getTelegramContext(message)
   if (!context || context.blocked) {

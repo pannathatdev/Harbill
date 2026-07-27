@@ -11,6 +11,7 @@ import PublicPayPage from "./components/PublicPayPage"
 import ProPage from "./components/ProPage"
 import AdminPage from "./components/AdminPage"
 import TelegramAddDuePage from "./components/TelegramAddDuePage"
+import TelegramConnectPage from "./components/TelegramConnectPage"
 import { api } from "./api"
 import { AdSlot, SupportLink } from "./components/Monetization"
 
@@ -373,6 +374,7 @@ export default function App() {
       <Route path="/auth" element={<AuthCallback />} />
       <Route path="/pay/:token" element={<PublicPayPage darkMode={darkMode} />} />
       <Route path="/telegram/add" element={<TelegramAddDuePage />} />
+      <Route path="/telegram/connect" element={<TelegramConnectPage />} />
       <Route path="/app" element={
         <RequireAuth user={user} onLogout={handleLogout} lang={lang} onLangChange={toggleLanguage} darkMode={darkMode} onThemeChange={toggleTheme}>
           <RoundPage
