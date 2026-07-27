@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS dues (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   created_by_user_id INT NULL,
+  debtor_user_id INT NULL,
   created_by_telegram_id VARCHAR(64) NULL,
   created_by_name VARCHAR(255) NULL,
   person_name VARCHAR(255) NOT NULL,
@@ -105,15 +106,19 @@ CREATE TABLE IF NOT EXISTS dues (
   slip_name VARCHAR(255) NULL,
   slip_type VARCHAR(128) NULL,
   slip_uploaded_at DATETIME NULL,
+  slip_uploaded_by_user_id INT NULL,
   paid_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_dues_user_month (user_id, due_month),
   INDEX idx_dues_user_status (user_id, status),
   INDEX idx_dues_creator_user (created_by_user_id),
+  INDEX idx_dues_debtor_user (debtor_user_id),
   INDEX idx_dues_telegram_chat (telegram_chat_id),
   INDEX idx_dues_batch_token (batch_token),
-  CONSTRAINT fk_dues_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  CONSTRAINT fk_dues_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_dues_debtor_user FOREIGN KEY (debtor_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_dues_slip_uploader FOREIGN KEY (slip_uploaded_by_user_id) REFERENCES users(id) ON DELETE SET NULL
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS telegram_chats (
@@ -192,12 +197,15 @@ CREATE TABLE IF NOT EXISTS due_slips (
 CREATE TABLE IF NOT EXISTS due_payment_links (
   token VARCHAR(64) PRIMARY KEY,
   user_id INT NOT NULL,
+  debtor_user_id INT NULL,
   person_name VARCHAR(255) NOT NULL,
   due_month CHAR(7) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   expires_at DATETIME NULL,
   INDEX idx_due_payment_links_user_month (user_id, due_month),
-  CONSTRAINT fk_due_payment_links_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  INDEX idx_due_payment_links_debtor (debtor_user_id),
+  CONSTRAINT fk_due_payment_links_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_due_payment_links_debtor FOREIGN KEY (debtor_user_id) REFERENCES users(id) ON DELETE SET NULL
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS ai_scan_usage (

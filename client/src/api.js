@@ -70,8 +70,13 @@ async function req(path, options = {}) {
   }
 
   if (res.status === 401) {
+    const returnTo = `${window.location.pathname}${window.location.search}`
+    if (!returnTo.startsWith("/login") && !returnTo.startsWith("/auth")) {
+      localStorage.setItem("harbill:returnTo", returnTo)
+    }
     localStorage.removeItem("token")
     window.location.href = "/login"
+    throw new Error("กรุณาเข้าสู่ระบบก่อน")
   }
 
   if (!res.ok) {
@@ -187,6 +192,7 @@ export const api = {
     if (slipCheck) form.append("slipCheck", JSON.stringify(slipCheck))
     return fetch(`${BASE}/pay/${token}/slip`, {
       method: "POST",
+      headers: { "Authorization": `Bearer ${getToken()}` },
       body: form
     }).then(async r => {
       const data = await r.json()
@@ -200,6 +206,7 @@ export const api = {
     if (slipCheck) form.append("slipCheck", JSON.stringify(slipCheck))
     return fetch(`${BASE}/pay/${token}/items/${id}/slip`, {
       method: "POST",
+      headers: { "Authorization": `Bearer ${getToken()}` },
       body: form
     }).then(async r => {
       const data = await r.json()
@@ -215,7 +222,9 @@ export const api = {
       try {
         const data = await r.json()
         message = data?.error || message
-      } catch {}
+      } catch {
+        // Keep the default message when the response is not JSON.
+      }
       throw new Error(message)
     }
     return r.blob()

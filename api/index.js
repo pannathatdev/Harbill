@@ -216,6 +216,8 @@ async function ensureDuesSchema() {
       AND COLUMN_NAME IN (
         'due_slip_id',
         'created_by_user_id',
+        'debtor_user_id',
+        'slip_uploaded_by_user_id',
         'created_by_telegram_id',
         'created_by_name',
         'creditor_name',
@@ -232,6 +234,13 @@ async function ensureDuesSchema() {
   }
   if (!existingDueColumns.has("created_by_user_id")) {
     await db.query("ALTER TABLE dues ADD COLUMN created_by_user_id INT NULL AFTER user_id")
+  }
+  if (!existingDueColumns.has("debtor_user_id")) {
+    await db.query("ALTER TABLE dues ADD COLUMN debtor_user_id INT NULL AFTER created_by_user_id")
+    await db.query("CREATE INDEX idx_dues_debtor_user ON dues (debtor_user_id)")
+  }
+  if (!existingDueColumns.has("slip_uploaded_by_user_id")) {
+    await db.query("ALTER TABLE dues ADD COLUMN slip_uploaded_by_user_id INT NULL AFTER slip_uploaded_at")
   }
   if (!existingDueColumns.has("created_by_telegram_id")) {
     await db.query("ALTER TABLE dues ADD COLUMN created_by_telegram_id VARCHAR(64) NULL AFTER created_by_user_id")
@@ -267,6 +276,18 @@ async function ensureDuesSchema() {
       AND COLUMN_NAME IN ('file_hash', 'check_status', 'check_note', 'check_payload')
   `)
   const existingSlipColumns = new Set(slipColumns.map(column => column.COLUMN_NAME))
+
+  const [paymentLinkColumns] = await db.query(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'due_payment_links'
+      AND COLUMN_NAME = 'debtor_user_id'
+  `)
+  if (!paymentLinkColumns[0]) {
+    await db.query("ALTER TABLE due_payment_links ADD COLUMN debtor_user_id INT NULL AFTER user_id")
+    await db.query("CREATE INDEX idx_due_payment_links_debtor ON due_payment_links (debtor_user_id)")
+  }
   if (!existingSlipColumns.has("file_hash")) {
     await db.query("ALTER TABLE due_slips ADD COLUMN file_hash CHAR(64) NULL AFTER file_data")
   }
@@ -1660,6 +1681,8 @@ function mapDue(row) {
     source: row.source || "web",
     approvalStatus: row.approval_status || "approved",
     createdByUserId: row.created_by_user_id || null,
+    debtorUserId: row.debtor_user_id || null,
+    slipUploadedByUserId: row.slip_uploaded_by_user_id || null,
     createdByTelegramId: row.created_by_telegram_id || "",
     createdByName: row.created_by_name || "",
     telegramChatId: row.telegram_chat_id || "",
@@ -1752,7 +1775,7 @@ async function createDueSlip({ userId, token = null, person, month, amount, file
   return result.insertId
 }
 
-async function publicPaymentPayload(token) {
+async function paymentPayloadForUser(token, viewerUserId) {
   const [links] = await db.query("SELECT * FROM due_payment_links WHERE token=?", [token])
   const link = links[0]
   if (!link) return { status: 404, error: "Payment link not found" }
@@ -1760,15 +1783,41 @@ async function publicPaymentPayload(token) {
     return { status: 410, error: "Payment link expired" }
   }
 
+  let debtorUserId = link.debtor_user_id ? Number(link.debtor_user_id) : null
+  if (!debtorUserId) {
+    const [matches] = await db.query(`
+      SELECT tm.user_id
+      FROM dues d
+      JOIN telegram_members tm
+        ON tm.chat_id=d.telegram_chat_id
+       AND tm.friend_name=d.person_name
+      WHERE d.user_id=? AND d.person_name=? AND d.due_month=?
+        AND tm.user_id=? AND tm.user_id IS NOT NULL
+      LIMIT 1
+    `, [link.user_id, link.person_name, link.due_month, viewerUserId])
+    if (matches[0]?.user_id) {
+      debtorUserId = Number(matches[0].user_id)
+      await db.query("UPDATE due_payment_links SET debtor_user_id=? WHERE token=?", [debtorUserId, token])
+      await db.query(`
+        UPDATE dues SET debtor_user_id=?
+        WHERE user_id=? AND person_name=? AND due_month=? AND debtor_user_id IS NULL
+      `, [debtorUserId, link.user_id, link.person_name, link.due_month])
+    }
+  }
+  if (!debtorUserId || debtorUserId !== Number(viewerUserId)) {
+    return { status: 403, error: "รายการนี้ไม่ได้ผูกกับบัญชีของคุณ กรุณาเชื่อม Telegram กับ Harbill ก่อน" }
+  }
+
   const [items] = await db.query(`
-    SELECT d.id, d.person_name, d.title, d.amount, d.due_month, d.status, d.note, d.due_slip_id,
+    SELECT d.id, d.person_name, d.debtor_user_id, d.title, d.amount, d.due_month, d.status, d.note, d.due_slip_id,
       d.slip_name, d.slip_type, d.slip_uploaded_at, d.paid_at, d.created_at, d.updated_at,
       s.check_status, s.check_note
     FROM dues d
     LEFT JOIN due_slips s ON s.id = d.due_slip_id
     WHERE d.user_id=? AND d.person_name=? AND d.due_month=? AND d.status <> 'paid'
+      AND d.debtor_user_id=?
     ORDER BY d.created_at DESC
-  `, [link.user_id, link.person_name, link.due_month])
+  `, [link.user_id, link.person_name, link.due_month, debtorUserId])
 
   const [ownerRows] = await db.query(`
     SELECT friend_name, promptpay, display_name
@@ -1964,19 +2013,19 @@ app.delete("/dues/:id", requireAuth, async (req, res) => {
   res.json({ ok: true })
 })
 
-app.get("/pay/:token", async (req, res) => {
+app.get("/pay/:token", requireAuth, async (req, res) => {
   await ensureDuesSchema()
   const token = String(req.params.token || "")
-  const result = await publicPaymentPayload(token)
+  const result = await paymentPayloadForUser(token, req.user.id)
   if (result.status !== 200) return res.status(result.status).json({ error: result.error })
   res.json(result.body)
 })
 
-app.post("/pay/:token/slip", upload.single("slip"), async (req, res) => {
+app.post("/pay/:token/slip", requireAuth, upload.single("slip"), async (req, res) => {
   await ensureDuesSchema()
   if (!req.file) return res.status(400).json({ error: "Slip file required" })
   const token = String(req.params.token || "")
-  const result = await publicPaymentPayload(token)
+  const result = await paymentPayloadForUser(token, req.user.id)
   if (result.status !== 200) return res.status(result.status).json({ error: result.error })
   const { link, body } = result
   if (!body.items.length || Number(body.total || 0) <= 0) {
@@ -1994,9 +2043,11 @@ app.post("/pay/:token/slip", upload.single("slip"), async (req, res) => {
   })
   await db.query(`
     UPDATE dues
-    SET status='pending', due_slip_id=?, slip_name=?, slip_type=?, slip_uploaded_at=NOW()
-    WHERE user_id=? AND person_name=? AND due_month=? AND status <> 'paid'
-  `, [slipId, req.file.originalname, req.file.mimetype, link.user_id, link.person_name, link.due_month])
+    SET status='pending', due_slip_id=?, slip_name=?, slip_type=?, slip_uploaded_at=NOW(),
+        slip_uploaded_by_user_id=?
+    WHERE user_id=? AND person_name=? AND due_month=? AND debtor_user_id=? AND status <> 'paid'
+  `, [slipId, req.file.originalname, req.file.mimetype, req.user.id,
+    link.user_id, link.person_name, link.due_month, req.user.id])
 
   const [telegramChats] = await db.query(`
     SELECT DISTINCT telegram_chat_id
@@ -2014,23 +2065,23 @@ app.post("/pay/:token/slip", upload.single("slip"), async (req, res) => {
     }
   })))
 
-  const fresh = await publicPaymentPayload(token)
+  const fresh = await paymentPayloadForUser(token, req.user.id)
   res.json({ ok: true, ...fresh.body })
 })
 
-app.post("/pay/:token/items/:id/slip", upload.single("slip"), async (req, res) => {
+app.post("/pay/:token/items/:id/slip", requireAuth, upload.single("slip"), async (req, res) => {
   await ensureDuesSchema()
   if (!req.file) return res.status(400).json({ error: "Slip file required" })
   const token = String(req.params.token || "")
-  const result = await publicPaymentPayload(token)
+  const result = await paymentPayloadForUser(token, req.user.id)
   if (result.status !== 200) return res.status(result.status).json({ error: result.error })
   const { link } = result
   const [dueRows] = await db.query(`
     SELECT *
     FROM dues
-    WHERE id=? AND user_id=? AND person_name=? AND due_month=? AND status <> 'paid'
+    WHERE id=? AND user_id=? AND person_name=? AND due_month=? AND debtor_user_id=? AND status <> 'paid'
     LIMIT 1
-  `, [req.params.id, link.user_id, link.person_name, link.due_month])
+  `, [req.params.id, link.user_id, link.person_name, link.due_month, req.user.id])
   const due = dueRows[0]
   if (!due) return res.status(404).json({ error: "Due item not found for this payment link" })
 
@@ -2045,9 +2096,10 @@ app.post("/pay/:token/items/:id/slip", upload.single("slip"), async (req, res) =
   })
   await db.query(`
     UPDATE dues
-    SET status='pending', due_slip_id=?, slip_name=?, slip_type=?, slip_uploaded_at=NOW()
+    SET status='pending', due_slip_id=?, slip_name=?, slip_type=?, slip_uploaded_at=NOW(),
+        slip_uploaded_by_user_id=?
     WHERE id=? AND user_id=?
-  `, [slipId, req.file.originalname, req.file.mimetype, due.id, link.user_id])
+  `, [slipId, req.file.originalname, req.file.mimetype, req.user.id, due.id, link.user_id])
 
   if (due.telegram_chat_id) {
     await sendTelegramMessage(due.telegram_chat_id, [
@@ -2061,7 +2113,7 @@ app.post("/pay/:token/items/:id/slip", upload.single("slip"), async (req, res) =
     })
   }
 
-  const fresh = await publicPaymentPayload(token)
+  const fresh = await paymentPayloadForUser(token, req.user.id)
   res.json({ ok: true, ...fresh.body })
 })
 
@@ -2519,7 +2571,7 @@ app.post("/telegram/web-app/context", async (req, res) => {
 
   const [friends] = await db.query("SELECT id, name FROM friends WHERE user_id=? ORDER BY name", [context.ownerUserId])
   const [telegramMembers] = await db.query(`
-    SELECT telegram_user_id, friend_name, username, display_name
+    SELECT telegram_user_id, user_id, friend_name, username, display_name
     FROM telegram_members
     WHERE chat_id=? AND friend_name IS NOT NULL AND friend_name <> ''
     ORDER BY friend_name
@@ -2529,6 +2581,8 @@ app.post("/telegram/web-app/context", async (req, res) => {
   telegramMembers.forEach(member => selectablePeople.set(member.friend_name, {
     id: `telegram:${member.telegram_user_id}`,
     name: member.friend_name,
+    userId: member.user_id ? Number(member.user_id) : null,
+    linked: Boolean(member.user_id),
     username: member.username || "",
     source: "telegram"
   }))
@@ -2549,6 +2603,14 @@ app.post("/telegram/web-app/dues", async (req, res) => {
   const context = await getTelegramWebAppContext(req.body?.initData, req.body?.chatId)
   if (context.status !== 200) return res.status(context.status).json({ error: context.error })
 
+  const [linkedMemberRows] = await db.query(`
+    SELECT friend_name, user_id
+    FROM telegram_members
+    WHERE chat_id=? AND user_id IS NOT NULL AND friend_name IS NOT NULL
+  `, [context.chatId])
+  const linkedUsersByName = new Map(
+    linkedMemberRows.map(member => [member.friend_name, Number(member.user_id)])
+  )
   const month = String(req.body.month || "").trim().slice(0, 7)
   const note = String(req.body.note || "").trim()
   const creditor = String(context.member.friend_name || context.verified.user.first_name || telegramName(context.verified.user)).trim()
@@ -2565,9 +2627,13 @@ app.post("/telegram/web-app/dues", async (req, res) => {
   for (const input of inputItems) {
     const title = String(input?.title || "").trim()
     const amount = Number(String(input?.amount || "").replace(/,/g, ""))
-    const debtors = [...new Set((Array.isArray(input?.debtors) ? input.debtors : [])
-      .map(name => String(name || "").trim())
-      .filter(Boolean))].filter(name => name !== creditor)
+    const debtorMap = new Map()
+    ;(Array.isArray(input?.debtors) ? input.debtors : []).forEach(value => {
+      const person = String(typeof value === "object" ? value?.name : value || "").trim()
+      const debtorUserId = linkedUsersByName.get(person) || null
+      if (person && person !== creditor) debtorMap.set(person, { person, debtorUserId })
+    })
+    const debtors = [...debtorMap.values()]
     if (!title || !Number.isFinite(amount) || amount <= 0 || debtors.length === 0) {
       return res.status(400).json({ error: "กรุณากรอกรายการ ราคา และเลือกคนที่ต้องจ่ายให้ครบ" })
     }
@@ -2577,8 +2643,9 @@ app.post("/telegram/web-app/dues", async (req, res) => {
     parsedItems.push({
       title,
       amount,
-      allocations: debtors.map((person, index) => ({
-        person,
+      allocations: debtors.map((debtor, index) => ({
+        person: debtor.person,
+        debtorUserId: debtor.debtorUserId,
         amount: (baseCents + (index < remainder ? 1 : 0)) / 100
       }))
     })
@@ -2594,31 +2661,44 @@ app.post("/telegram/web-app/dues", async (req, res) => {
         await connection.query("INSERT IGNORE INTO friends (user_id, name) VALUES (?, ?)", [context.ownerUserId, allocation.person])
         const [result] = await connection.query(`
           INSERT INTO dues (
-            user_id, created_by_user_id, created_by_telegram_id, created_by_name,
+            user_id, created_by_user_id, debtor_user_id, created_by_telegram_id, created_by_name,
             person_name, creditor_name, title, amount, due_month, status, note,
             source, approval_status, telegram_chat_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, 'telegram', 'approved', ?)
-        `, [context.ownerUserId, context.member.user_id, context.telegramUserId, creditor,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, 'telegram', 'approved', ?)
+        `, [context.ownerUserId, context.member.user_id, allocation.debtorUserId, context.telegramUserId, creditor,
           allocation.person, creditor, item.title, allocation.amount, month,
           note || `Telegram total ${item.amount.toFixed(2)}`, context.chatId])
         createdIds.push(result.insertId)
       }
     }
 
-    const debtorNames = [...new Set(parsedItems.flatMap(item => item.allocations.map(allocation => allocation.person)))]
-    for (const person of debtorNames) {
+    const debtorsByName = new Map()
+    parsedItems.flatMap(item => item.allocations).forEach(allocation => {
+      const current = debtorsByName.get(allocation.person)
+      if (!current?.debtorUserId || allocation.debtorUserId) debtorsByName.set(allocation.person, allocation)
+    })
+    for (const [person, debtor] of debtorsByName) {
       const [existing] = await connection.query(
-        "SELECT token FROM due_payment_links WHERE user_id=? AND person_name=? AND due_month=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT token, debtor_user_id FROM due_payment_links WHERE user_id=? AND person_name=? AND due_month=? ORDER BY created_at DESC LIMIT 1",
         [context.ownerUserId, person, month]
       )
       const paymentToken = existing[0]?.token || crypto.randomBytes(18).toString("hex")
       if (!existing[0]) {
         await connection.query(
-          "INSERT INTO due_payment_links (token, user_id, person_name, due_month) VALUES (?, ?, ?, ?)",
-          [paymentToken, context.ownerUserId, person, month]
+          "INSERT INTO due_payment_links (token, user_id, debtor_user_id, person_name, due_month) VALUES (?, ?, ?, ?, ?)",
+          [paymentToken, context.ownerUserId, debtor.debtorUserId, person, month]
+        )
+      } else if (!existing[0].debtor_user_id && debtor.debtorUserId) {
+        await connection.query(
+          "UPDATE due_payment_links SET debtor_user_id=? WHERE token=?",
+          [debtor.debtorUserId, paymentToken]
         )
       }
-      paymentLinks.push({ person, url: `${CLIENT_URL}/pay/${paymentToken}?name=${encodeURIComponent(person)}` })
+      paymentLinks.push({
+        person,
+        linked: Boolean(debtor.debtorUserId || existing[0]?.debtor_user_id),
+        url: `${CLIENT_URL}/pay/${paymentToken}?name=${encodeURIComponent(person)}`
+      })
     }
     await connection.commit()
   } catch (err) {

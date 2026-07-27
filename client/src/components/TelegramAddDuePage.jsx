@@ -56,11 +56,16 @@ export default function TelegramAddDuePage() {
 
   const people = useMemo(() => {
     const currentName = context?.member?.name || ""
-    const names = new Set(customPeople)
+    const byName = new Map(customPeople.map(name => [name, {
+      name,
+      userId: null,
+      linked: false,
+      source: "custom"
+    }]))
     ;(context?.friends || []).forEach(friend => {
-      if (friend.name && friend.name !== currentName) names.add(friend.name)
+      if (friend.name && friend.name !== currentName) byName.set(friend.name, friend)
     })
-    return [...names]
+    return [...byName.values()]
   }, [context, customPeople])
 
   function updateItem(key, changes) {
@@ -98,7 +103,10 @@ export default function TelegramAddDuePage() {
         items: items.map(item => ({
           title: item.title.trim(),
           amount: Number(item.amount),
-          debtors: item.debtors
+          debtors: item.debtors.map(name => {
+            const person = people.find(value => value.name === name)
+            return { name, userId: person?.userId || null }
+          })
         }))
       })
       webApp?.HapticFeedback?.notificationOccurred?.("success")
@@ -172,16 +180,16 @@ export default function TelegramAddDuePage() {
                   />
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {people.map(name => {
-                    const selected = item.debtors.includes(name)
+                  {people.map(person => {
+                    const selected = item.debtors.includes(person.name)
                     return (
                       <button
-                        key={name}
+                        key={person.name}
                         type="button"
-                        onClick={() => toggleDebtor(item.key, name)}
+                        onClick={() => toggleDebtor(item.key, person.name)}
                         className={`rounded-full border px-3 py-1.5 text-xs font-bold ${selected ? "border-sky-300 bg-sky-400/20 text-sky-100" : "border-white/10 bg-slate-900 text-slate-300"}`}
                       >
-                        {selected ? "✓ " : ""}{name}
+                        {selected ? "✓ " : ""}{person.name}{person.linked ? "" : " · ยังไม่เชื่อม"}
                       </button>
                     )
                   })}

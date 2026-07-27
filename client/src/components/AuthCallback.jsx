@@ -11,7 +11,12 @@ export default function AuthCallback() {
       localStorage.setItem("token", token)
       localStorage.setItem("user", JSON.stringify({ name, avatar }))
       // ใช้ replace แทน navigate เพื่อล้าง URL params ออก
-      window.location.replace("/app")
+      const returnTo = localStorage.getItem("harbill:returnTo")
+      localStorage.removeItem("harbill:returnTo")
+      const safeReturnTo = returnTo?.startsWith("/") && !returnTo.startsWith("//")
+        ? returnTo
+        : "/app"
+      window.location.replace(safeReturnTo)
     } else {
       window.location.replace("/login")
     }

@@ -104,6 +104,7 @@ export default function PublicPayPage({ darkMode = true }) {
 
   useEffect(() => {
     let cancelled = false
+    localStorage.setItem("harbill:returnTo", `/pay/${token}`)
     setLoading(true)
     api.getPublicPayment(token)
       .then(result => {
