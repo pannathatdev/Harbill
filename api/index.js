@@ -2758,13 +2758,25 @@ async function sendTelegramMenu(context) {
 async function handleTelegramNewMembers(message) {
   await ensureTelegramSchema()
   const chatId = String(message?.chat?.id || "")
-  const newMembers = Array.isArray(message?.new_chat_members)
-    ? message.new_chat_members.filter(member => member?.id && !member.is_bot)
+  const allNewMembers = Array.isArray(message?.new_chat_members)
+    ? message.new_chat_members.filter(member => member?.id)
     : []
-  if (!chatId || newMembers.length === 0) return
+  const newMembers = allNewMembers.filter(member => !member.is_bot)
+  const botWasAdded = allNewMembers.some(member => member.is_bot)
+  if (!chatId || allNewMembers.length === 0) return
 
   const allowedChatIds = telegramAllowedChatIds()
   if (allowedChatIds.length > 0 && !allowedChatIds.includes(chatId)) return
+
+  if (botWasAdded) {
+    await sendTelegramMessage(chatId, [
+      "✅ Harbill Bot พร้อมใช้งานแล้ว",
+      "แถบคำสั่งด่วนอยู่เหนือช่องพิมพ์ หากกลุ่มยังไม่เชื่อม ให้เข้าสู่ระบบ Harbill แล้วเชื่อมกลุ่มก่อน"
+    ].join("\n"), {
+      reply_markup: telegramReplyKeyboard()
+    })
+  }
+  if (newMembers.length === 0) return
 
   const [chatRows] = await db.query(
     "SELECT * FROM telegram_chats WHERE chat_id=? AND enabled=1",
