@@ -114,6 +114,7 @@ export const api = {
   createTelegramConnectToken: () => post("/telegram/connect-token", {}),
   authenticateTelegramWebApp: (initData) => post("/telegram/web-app/auth", { initData }),
   getTelegramWebAppContext: (data) => post("/telegram/web-app/context", data),
+  saveTelegramWebAppPaymentInfo: (data) => post("/telegram/web-app/payment-info", data),
   createTelegramWebAppDue: (data) => post("/telegram/web-app/dues", data),
 
   // Analytics / Admin

@@ -3056,10 +3056,32 @@ app.post("/telegram/web-app/context", async (req, res) => {
       name: context.member.friend_name || context.verified.user.first_name || telegramName(context.verified.user),
       role: context.member.role,
       hasPromptPay: Boolean(paymentRows[0]?.promptpay),
+      promptPay: paymentRows[0]?.promptpay || "",
       paymentDisplayName: paymentRows[0]?.display_name || ""
     },
     friends: [...selectablePeople.values()]
   })
+})
+
+app.post("/telegram/web-app/payment-info", async (req, res) => {
+  const context = await getTelegramWebAppContext(req.body?.initData, req.body?.chatId)
+  if (context.status !== 200) return res.status(context.status).json({ error: context.error })
+
+  const promptpay = String(req.body?.promptpay || "").replace(/\D/g, "")
+  const displayName = String(req.body?.displayName || "").trim()
+  if (![10, 13].includes(promptpay.length)) {
+    return res.status(400).json({ error: "พร้อมเพย์ต้องเป็นเบอร์โทร 10 หลัก หรือเลขประจำตัว 13 หลัก" })
+  }
+  if (!displayName) return res.status(400).json({ error: "กรุณากรอกชื่อบัญชีรับเงิน" })
+
+  const friendName = String(context.member.friend_name || telegramName(context.verified.user)).trim()
+  await db.query(`
+    INSERT INTO payment_info (user_id, friend_name, bank_name, account_number, promptpay, display_name)
+    VALUES (?, ?, 'พร้อมเพย์อย่างเดียว', '', ?, ?)
+    ON DUPLICATE KEY UPDATE promptpay=VALUES(promptpay), display_name=VALUES(display_name)
+  `, [context.member.user_id, friendName, promptpay, displayName])
+
+  res.json({ ok: true, promptpay, displayName })
 })
 
 app.post("/telegram/web-app/dues", async (req, res) => {

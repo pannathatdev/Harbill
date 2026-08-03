@@ -22,10 +22,13 @@ export default function TelegramAddDuePage() {
   const initData = webApp?.initData || ""
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savingPayment, setSavingPayment] = useState(false)
   const [error, setError] = useState("")
   const [context, setContext] = useState(null)
   const [month, setMonth] = useState(currentMonth())
   const [note, setNote] = useState("")
+  const [promptPay, setPromptPay] = useState("")
+  const [paymentDisplayName, setPaymentDisplayName] = useState("")
   const [items, setItems] = useState(() => [emptyItem()])
 
   useEffect(() => {
@@ -68,7 +71,11 @@ export default function TelegramAddDuePage() {
     let cancelled = false
     api.getTelegramWebAppContext({ initData, chatId })
       .then(data => {
-        if (!cancelled) setContext(data)
+        if (!cancelled) {
+          setContext(data)
+          setPromptPay(data.member?.promptPay || "")
+          setPaymentDisplayName(data.member?.paymentDisplayName || data.member?.name || "")
+        }
       })
       .catch(err => {
         if (!cancelled) setError(err.message || "เชื่อม Telegram ไม่สำเร็จ")
@@ -131,6 +138,31 @@ export default function TelegramAddDuePage() {
     }
   }
 
+  async function savePaymentInfo() {
+    if (savingPayment) return
+    setSavingPayment(true)
+    setError("")
+    try {
+      const result = await api.saveTelegramWebAppPaymentInfo({
+        initData,
+        chatId,
+        promptpay: promptPay,
+        displayName: paymentDisplayName
+      })
+      setPromptPay(result.promptpay)
+      setPaymentDisplayName(result.displayName)
+      setContext(value => ({
+        ...value,
+        member: { ...value.member, hasPromptPay: true, promptPay: result.promptpay, paymentDisplayName: result.displayName }
+      }))
+      webApp?.HapticFeedback?.notificationOccurred?.("success")
+    } catch (err) {
+      setError(err.message || "บันทึกพร้อมเพย์ไม่สำเร็จ")
+    } finally {
+      setSavingPayment(false)
+    }
+  }
+
   const canSubmit = context?.member?.hasPromptPay && month && items.length > 0 && items.every(item => (
     item.title.trim() && Number(item.amount) > 0 && item.debtors.length > 0
   ))
@@ -154,11 +186,37 @@ export default function TelegramAddDuePage() {
               <p className="mt-2 text-xs text-slate-400">แสดงเฉพาะสมาชิกที่ยืนยันบัญชี Telegram กับ Harbill แล้ว</p>
             </section>
 
-            {!context.member.hasPromptPay && (
-              <div className="rounded-xl border border-amber-300/20 bg-amber-400/10 p-3 text-sm font-bold text-amber-100">
-                กรุณาเพิ่มพร้อมเพย์ของตัวเองใน Harbill ก่อนสร้างรายการ
+            <section className={`rounded-2xl border p-3 ${context.member.hasPromptPay ? "border-emerald-300/20 bg-emerald-400/10" : "border-amber-300/20 bg-amber-400/10"}`}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-black">พร้อมเพย์รับเงินของคุณ</p>
+                <span className={`text-xs font-bold ${context.member.hasPromptPay ? "text-emerald-200" : "text-amber-200"}`}>
+                  {context.member.hasPromptPay ? "บันทึกแล้ว" : "ต้องตั้งค่าก่อน"}
+                </span>
               </div>
-            )}
+              <div className="mt-3 grid gap-2">
+                <input
+                  value={paymentDisplayName}
+                  onChange={event => setPaymentDisplayName(event.target.value)}
+                  className="rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm outline-none focus:border-sky-400"
+                  placeholder="ชื่อบัญชีรับเงิน"
+                />
+                <input
+                  value={promptPay}
+                  onChange={event => setPromptPay(event.target.value)}
+                  inputMode="numeric"
+                  className="rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm outline-none focus:border-sky-400"
+                  placeholder="เบอร์โทร 10 หลัก หรือเลขประจำตัว 13 หลัก"
+                />
+                <button
+                  type="button"
+                  onClick={savePaymentInfo}
+                  disabled={savingPayment || !paymentDisplayName.trim() || !promptPay.trim()}
+                  className="rounded-xl bg-emerald-600 px-3 py-2.5 text-sm font-black disabled:bg-slate-700 disabled:text-slate-400"
+                >
+                  {savingPayment ? "กำลังบันทึก..." : context.member.hasPromptPay ? "อัปเดตพร้อมเพย์" : "บันทึกพร้อมเพย์"}
+                </button>
+              </div>
+            </section>
 
             {items.map((item, index) => (
               <section key={item.key} className="rounded-2xl border border-white/10 bg-white/5 p-3">
