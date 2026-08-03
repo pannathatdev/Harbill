@@ -24,8 +24,6 @@ export default function TelegramAddDuePage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [context, setContext] = useState(null)
-  const [customPeople, setCustomPeople] = useState([])
-  const [newName, setNewName] = useState("")
   const [month, setMonth] = useState(currentMonth())
   const [note, setNote] = useState("")
   const [items, setItems] = useState(() => [emptyItem()])
@@ -83,17 +81,12 @@ export default function TelegramAddDuePage() {
 
   const people = useMemo(() => {
     const currentName = context?.member?.name || ""
-    const byName = new Map(customPeople.map(name => [name, {
-      name,
-      userId: null,
-      linked: false,
-      source: "custom"
-    }]))
+    const byName = new Map()
     ;(context?.friends || []).forEach(friend => {
       if (friend.name && friend.name !== currentName) byName.set(friend.name, friend)
     })
     return [...byName.values()]
-  }, [context, customPeople])
+  }, [context])
 
   function updateItem(key, changes) {
     setItems(value => value.map(item => item.key === key ? { ...item, ...changes } : item))
@@ -107,13 +100,6 @@ export default function TelegramAddDuePage() {
         ? item.debtors.filter(value => value !== name)
         : [...item.debtors, name]
     })
-  }
-
-  function addPerson() {
-    const name = newName.trim()
-    if (!name) return
-    setCustomPeople(value => value.includes(name) ? value : [...value, name])
-    setNewName("")
   }
 
   async function submit(event) {
@@ -145,7 +131,7 @@ export default function TelegramAddDuePage() {
     }
   }
 
-  const canSubmit = month && items.length > 0 && items.every(item => (
+  const canSubmit = context?.member?.hasPromptPay && month && items.length > 0 && items.every(item => (
     item.title.trim() && Number(item.amount) > 0 && item.debtors.length > 0
   ))
 
@@ -165,22 +151,14 @@ export default function TelegramAddDuePage() {
           <form onSubmit={submit} className="space-y-3">
             <section className="rounded-2xl border border-white/10 bg-white/5 p-3">
               <p className="text-sm font-black">รายชื่อคนในรายการ</p>
-              <div className="mt-2 flex gap-2">
-                <input
-                  value={newName}
-                  onChange={event => setNewName(event.target.value)}
-                  onKeyDown={event => {
-                    if (event.key === "Enter") {
-                      event.preventDefault()
-                      addPerson()
-                    }
-                  }}
-                  className="min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-sky-400"
-                  placeholder="เพิ่มชื่อ เช่น ดีน"
-                />
-                <button type="button" onClick={addPerson} className="rounded-xl bg-slate-700 px-3 py-2 text-sm font-bold">เพิ่มชื่อ</button>
-              </div>
+              <p className="mt-2 text-xs text-slate-400">แสดงเฉพาะสมาชิกที่ยืนยันบัญชี Telegram กับ Harbill แล้ว</p>
             </section>
+
+            {!context.member.hasPromptPay && (
+              <div className="rounded-xl border border-amber-300/20 bg-amber-400/10 p-3 text-sm font-bold text-amber-100">
+                กรุณาเพิ่มพร้อมเพย์ของตัวเองใน Harbill ก่อนสร้างรายการ
+              </div>
+            )}
 
             {items.map((item, index) => (
               <section key={item.key} className="rounded-2xl border border-white/10 bg-white/5 p-3">
