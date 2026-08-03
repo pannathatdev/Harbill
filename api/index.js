@@ -1950,6 +1950,10 @@ async function notifyTelegramSlipStatus({ token, ownerUserId, creditorUserId, pa
     WHERE user_id=? AND telegram_user_id IS NOT NULL
   `, [payerUserId])
   const paymentUrl = telegramPaymentUrl(token, person)
+  const reviewParams = new URLSearchParams(dueId
+    ? { due_id: String(dueId), month }
+    : { month, person })
+  const reviewUrl = `${CLIENT_URL}/dues?${reviewParams.toString()}`
   await Promise.all(payerRows.map(member => sendTelegramMessage(member.telegram_user_id, [
     "🟡 สถานะ: ส่งสลิปแล้ว รอเจ้าหนี้ตรวจ",
     title ? `รายการ: ${title}` : `เดือน: ${month}`,
@@ -1975,7 +1979,7 @@ async function notifyTelegramSlipStatus({ token, ownerUserId, creditorUserId, pa
       "🟡 สถานะ: รอตรวจสอบ"
     ].join("\n"), {
       reply_markup: {
-        inline_keyboard: [[{ text: "🔎 ตรวจสลิปใน Harbill", url: `${CLIENT_URL}/dues` }]]
+        inline_keyboard: [[{ text: "🔎 ตรวจสลิปใน Harbill", url: reviewUrl }]]
       }
     })
     if (sent?.message_id) {
@@ -2022,7 +2026,7 @@ async function notifyTelegramPaidStatus(due) {
       statusText
     ].join("\n"), {
       reply_markup: {
-        inline_keyboard: [[{ text: "🔎 ดูใน Harbill", url: `${CLIENT_URL}/dues` }]]
+        inline_keyboard: [[{ text: "🔎 ดูใน Harbill", url: `${CLIENT_URL}/dues?due_id=${encodeURIComponent(due.id)}&month=${encodeURIComponent(due.due_month)}` }]]
       }
     })
   }
@@ -2048,15 +2052,15 @@ app.get("/dues", requireAuth, async (req, res) => {
   await ensureDuesSchema()
   const month = String(req.query.month || "").slice(0, 7)
   const status = String(req.query.status || "")
-  const clauses = ["user_id=?"]
-  const values = [req.user.id]
+  const clauses = ["(d.user_id=? OR d.created_by_user_id=?)"]
+  const values = [req.user.id, req.user.id]
 
   if (/^\d{4}-\d{2}$/.test(month)) {
-    clauses.push("due_month=?")
+    clauses.push("d.due_month=?")
     values.push(month)
   }
   if (["unpaid", "pending", "paid"].includes(status)) {
-    clauses.push("status=?")
+    clauses.push("d.status=?")
     values.push(status)
   }
 
@@ -2064,7 +2068,7 @@ app.get("/dues", requireAuth, async (req, res) => {
     SELECT d.*, s.check_status, s.check_note
     FROM dues d
     LEFT JOIN due_slips s ON s.id = d.due_slip_id
-    WHERE ${clauses.map(clause => `d.${clause}`).join(" AND ")}
+    WHERE ${clauses.join(" AND ")}
     ORDER BY d.due_month DESC, d.person_name ASC, d.created_at DESC
   `, values)
   res.json(rows.map(mapDue))
@@ -2136,9 +2140,9 @@ app.patch("/dues/:id", requireAuth, async (req, res) => {
 
   if (fields.length === 0) return res.status(400).json({ error: "No changes" })
 
-  values.push(req.params.id, req.user.id)
-  await db.query(`UPDATE dues SET ${fields.join(", ")} WHERE id=? AND user_id=?`, values)
-  const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
+  values.push(req.params.id, req.user.id, req.user.id)
+  await db.query(`UPDATE dues SET ${fields.join(", ")} WHERE id=? AND (user_id=? OR created_by_user_id=?)`, values)
+  const [rows] = await db.query("SELECT * FROM dues WHERE id=? AND (user_id=? OR created_by_user_id=?)", [req.params.id, req.user.id, req.user.id])
   if (!rows[0]) return res.status(404).json({ error: "Due item not found" })
   if (req.body.status !== undefined) await notifyTelegramPaidStatus(rows[0])
   res.json(mapDue(rows[0]))
@@ -2147,11 +2151,11 @@ app.patch("/dues/:id", requireAuth, async (req, res) => {
 app.post("/dues/:id/slip", requireAuth, upload.single("slip"), async (req, res) => {
   await ensureDuesSchema()
   if (!req.file) return res.status(400).json({ error: "Slip file required" })
-  const [dueRows] = await db.query("SELECT * FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
+  const [dueRows] = await db.query("SELECT * FROM dues WHERE id=? AND (user_id=? OR created_by_user_id=?)", [req.params.id, req.user.id, req.user.id])
   const due = dueRows[0]
   if (!due) return res.status(404).json({ error: "Due item not found" })
   const slipId = await createDueSlip({
-    userId: req.user.id,
+    userId: due.user_id,
     person: due.person_name,
     month: due.due_month,
     amount: due.amount,
@@ -2161,14 +2165,14 @@ app.post("/dues/:id/slip", requireAuth, upload.single("slip"), async (req, res) 
   await db.query(`
     UPDATE dues
     SET status='pending', due_slip_id=?, slip_name=?, slip_type=?, slip_uploaded_at=NOW()
-    WHERE id=? AND user_id=?
-  `, [slipId, req.file.originalname, req.file.mimetype, req.params.id, req.user.id])
+    WHERE id=? AND (user_id=? OR created_by_user_id=?)
+  `, [slipId, req.file.originalname, req.file.mimetype, req.params.id, req.user.id, req.user.id])
   const [rows] = await db.query(`
     SELECT d.*, s.check_status, s.check_note
     FROM dues d
     LEFT JOIN due_slips s ON s.id = d.due_slip_id
-    WHERE d.id=? AND d.user_id=?
-  `, [req.params.id, req.user.id])
+    WHERE d.id=? AND (d.user_id=? OR d.created_by_user_id=?)
+  `, [req.params.id, req.user.id, req.user.id])
   res.json(mapDue(rows[0]))
 })
 
@@ -2178,9 +2182,9 @@ app.get("/dues/:id/slip", requireAuth, async (req, res) => {
     SELECT s.file_name, s.file_type, s.file_data
     FROM dues d
     JOIN due_slips s ON s.id = d.due_slip_id
-    WHERE d.id=? AND d.user_id=?
+    WHERE d.id=? AND (d.user_id=? OR d.created_by_user_id=?)
     LIMIT 1
-  `, [req.params.id, req.user.id])
+  `, [req.params.id, req.user.id, req.user.id])
   const slip = rows[0]
   if (!slip) return res.status(404).json({ error: "Slip not found" })
   res.setHeader("Content-Type", slip.file_type || "application/octet-stream")
@@ -2196,16 +2200,27 @@ app.post("/dues/pay-link", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Invalid payment link request" })
   }
 
+  const [accessibleDueRows] = await db.query(`
+    SELECT user_id, debtor_user_id
+    FROM dues
+    WHERE person_name=? AND due_month=?
+      AND (user_id=? OR created_by_user_id=?)
+    ORDER BY created_at DESC LIMIT 1
+  `, [person, month, req.user.id, req.user.id])
+  const accessibleDue = accessibleDueRows[0]
+  if (!accessibleDue) return res.status(404).json({ error: "Due item not found" })
+  const ownerUserId = Number(accessibleDue.user_id)
+
   const [existing] = await db.query(
     "SELECT token FROM due_payment_links WHERE user_id=? AND creditor_user_id=? AND person_name=? AND due_month=? ORDER BY created_at DESC LIMIT 1",
-    [req.user.id, req.user.id, person, month]
+    [ownerUserId, req.user.id, person, month]
   )
   const token = existing[0]?.token || crypto.randomBytes(18).toString("hex")
 
   if (!existing[0]) {
     await db.query(
-      "INSERT INTO due_payment_links (token, user_id, creditor_user_id, person_name, due_month) VALUES (?, ?, ?, ?, ?)",
-      [token, req.user.id, req.user.id, person, month]
+      "INSERT INTO due_payment_links (token, user_id, creditor_user_id, debtor_user_id, person_name, due_month) VALUES (?, ?, ?, ?, ?, ?)",
+      [token, ownerUserId, req.user.id, accessibleDue.debtor_user_id || null, person, month]
     )
   }
 
@@ -2214,7 +2229,7 @@ app.post("/dues/pay-link", requireAuth, async (req, res) => {
 
 app.delete("/dues/:id", requireAuth, async (req, res) => {
   await ensureDuesSchema()
-  await db.query("DELETE FROM dues WHERE id=? AND user_id=?", [req.params.id, req.user.id])
+  await db.query("DELETE FROM dues WHERE id=? AND (user_id=? OR created_by_user_id=?)", [req.params.id, req.user.id, req.user.id])
   res.json({ ok: true })
 })
 

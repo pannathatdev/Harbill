@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { api } from "../api"
 
 const STORAGE_KEY = "harbill:dues:v1"
@@ -309,10 +309,17 @@ function readStoredItems() {
 }
 
 export default function DuesPage({ lang = "th", darkMode = true }) {
+  const initialParams = new URLSearchParams(window.location.search)
+  const initialMonth = /^\d{4}-\d{2}$/.test(initialParams.get("month") || "")
+    ? initialParams.get("month")
+    : new Date().toISOString().slice(0, 7)
+  const initialPerson = initialParams.get("person") || ""
+  const targetDueId = Number(initialParams.get("due_id") || 0)
+  const openedTargetSlip = useRef(false)
   const [items, setItems] = useState(readStoredItems)
   const [status, setStatus] = useState("all")
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
-  const [query, setQuery] = useState("")
+  const [month, setMonth] = useState(initialMonth)
+  const [query, setQuery] = useState(initialPerson)
   const [form, setForm] = useState({ person: "", title: "", amount: "", note: "" })
   const [notice, setNotice] = useState("")
   const [linkModal, setLinkModal] = useState(null)
@@ -321,7 +328,7 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
   const [friends, setFriends] = useState([])
   const [loading, setLoading] = useState(true)
   const [usingDatabase, setUsingDatabase] = useState(false)
-  const [expandedPeople, setExpandedPeople] = useState({})
+  const [expandedPeople, setExpandedPeople] = useState(() => initialPerson ? { [initialPerson]: true } : {})
   const [telegramConnect, setTelegramConnect] = useState(null)
   const [telegramConnecting, setTelegramConnecting] = useState(false)
   const t = copy[lang] || copy.th
@@ -351,6 +358,27 @@ export default function DuesPage({ lang = "th", darkMode = true }) {
       })
     return () => { cancelled = true }
   }, [month])
+
+  useEffect(() => {
+    if (!usingDatabase || !targetDueId || openedTargetSlip.current) return
+    const target = items.find(item => Number(item.id) === targetDueId)
+    if (!target) return
+    openedTargetSlip.current = true
+    setExpandedPeople(prev => ({ ...prev, [target.person]: true }))
+    if (!target.slipName && !target.slipUrl) return
+    if (target.slipUrl?.startsWith("blob:")) {
+      setSlipModal(target)
+      return
+    }
+    api.getDueSlipBlob(target.id)
+      .then(blob => {
+        const slipUrl = URL.createObjectURL(blob)
+        const next = { ...target, slipUrl, slipType: target.slipType || blob.type || "file" }
+        setItems(prev => prev.map(row => row.id === target.id ? next : row))
+        setSlipModal(next)
+      })
+      .catch(err => showNotice(err.message || "เปิดสลิปไม่ได้"))
+  }, [items, targetDueId, usingDatabase])
 
   useEffect(() => {
     let cancelled = false
