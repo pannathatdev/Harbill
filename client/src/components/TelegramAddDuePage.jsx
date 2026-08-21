@@ -13,6 +13,13 @@ function emptyItem() {
   return { key: `${Date.now()}-${Math.random()}`, title: "", amount: "", debtors: [] }
 }
 
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
 export default function TelegramAddDuePage() {
   const params = new URLSearchParams(window.location.search)
   const webApp = tg()
@@ -239,9 +246,12 @@ export default function TelegramAddDuePage() {
                     value={item.amount}
                     onChange={event => updateItem(item.key, { amount: event.target.value })}
                     className="min-w-0 rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm outline-none focus:border-sky-400"
-                    placeholder="ราคา"
+                    placeholder="ยอดรวม"
                   />
                 </div>
+                <p className="mt-2 text-[11px] font-semibold leading-5 text-slate-400">
+                  ช่องจำนวนเงินคือ <span className="text-sky-200">ยอดรวมของรายการ</span> ระบบจะหารเท่ากันให้คนที่เลือก ไม่ใช่ยอดต่อคน
+                </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {people.map(person => {
                     const selected = item.debtors.includes(person.name)
@@ -258,6 +268,18 @@ export default function TelegramAddDuePage() {
                   })}
                   {people.length === 0 && <p className="text-xs text-slate-400">เพิ่มชื่อด้านบนก่อน</p>}
                 </div>
+                {item.debtors.length > 0 && Number(item.amount) > 0 && (
+                  <div className="mt-3 rounded-xl border border-sky-300/20 bg-sky-400/10 px-3 py-2.5 text-xs leading-5 text-sky-100">
+                    <p className="font-black">สรุปก่อนบันทึก</p>
+                    <p>
+                      ยอดรวม ฿{formatMoney(item.amount)} ÷ {item.debtors.length} คน
+                      {item.debtors.length === 1
+                        ? ` = ฿${formatMoney(item.amount)} สำหรับคนที่เลือก`
+                        : ` ≈ คนละ ฿${formatMoney(Number(item.amount) / item.debtors.length)}`}
+                    </p>
+                    <p className="text-sky-200/75">ผู้จ่าย: {item.debtors.join(", ")}</p>
+                  </div>
+                )}
               </section>
             ))}
 

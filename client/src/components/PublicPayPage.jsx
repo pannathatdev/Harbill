@@ -222,12 +222,34 @@ export default function PublicPayPage({ darkMode = true }) {
 
   async function saveQrImage(image = qrUrl, label = "total") {
     if (!image) return
-    const link = document.createElement("a")
-    link.href = image
-    link.download = fileSafeName(label)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+    const fileName = fileSafeName(label)
+    let objectUrl = ""
+
+    try {
+      // Blob URLs work in more mobile browsers and in-app webviews than a
+      // download attribute pointing directly at a large data URL.
+      const response = await fetch(image)
+      if (!response.ok) throw new Error("QR image unavailable")
+      objectUrl = URL.createObjectURL(await response.blob())
+
+      const link = document.createElement("a")
+      link.href = objectUrl
+      link.download = fileName
+      link.rel = "noopener"
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setUploadMessage("บันทึก QR แล้ว")
+    } catch {
+      // Keep the QR accessible when a webview blocks programmatic downloads;
+      // the user can long-press the opened image to save it.
+      const opened = window.open(image, "_blank", "noopener,noreferrer")
+      setUploadMessage(opened
+        ? "เปิดรูป QR แล้ว กดค้างที่รูปเพื่อบันทึก"
+        : "บันทึก QR ไม่สำเร็จ กรุณากดค้างที่รูป QR เพื่อบันทึก")
+    } finally {
+      if (objectUrl) window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+    }
   }
 
   async function sharePayment() {
@@ -478,32 +500,6 @@ export default function PublicPayPage({ darkMode = true }) {
                 </div>
               )}
 
-              {data.receipts?.length > 0 && (
-                <div className={`mt-4 rounded-2xl border p-4 ${panel}`}>
-                  <p className="text-sm font-black">ประวัติสลิปของฉัน</p>
-                  <div className="mt-3 space-y-2">
-                    {data.receipts.map(item => (
-                      <button
-                        key={`receipt-${item.id}`}
-                        type="button"
-                        onClick={() => viewUploadedSlip(item)}
-                        disabled={loadingSlipId === item.id}
-                        className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left ${button}`}
-                      >
-                        <span>
-                          <span className="block text-sm font-bold">{item.title}</span>
-                          <span className={`mt-1 block text-xs ${item.status === "paid" ? "text-emerald-400" : "text-amber-400"}`}>
-                            {item.status === "paid" ? "ชำระแล้ว" : "ส่งแล้ว · รอตรวจ"}
-                          </span>
-                        </span>
-                        <span className="shrink-0 text-xs font-bold text-sky-400">
-                          {loadingSlipId === item.id ? "กำลังเปิด..." : "ดูสลิป"}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </section>

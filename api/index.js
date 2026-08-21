@@ -1910,7 +1910,8 @@ async function paymentPayloadForUser(token, viewerUserId) {
 
   const [items] = await db.query(`
     SELECT d.id, d.person_name, d.debtor_user_id, d.title, d.amount, d.due_month, d.status, d.note, d.due_slip_id,
-      d.slip_name, d.slip_type, d.slip_uploaded_at, d.paid_at, d.created_at, d.updated_at,
+      d.slip_name, d.slip_type, d.slip_uploaded_at, d.slip_uploaded_by_user_id,
+      d.paid_at, d.created_at, d.updated_at,
       s.check_status, s.check_note
     FROM dues d
     LEFT JOIN due_slips s ON s.id = d.due_slip_id
@@ -1933,7 +1934,12 @@ async function paymentPayloadForUser(token, viewerUserId) {
       person: link.person_name,
       month: link.due_month,
       items: items.filter(item => item.status !== "paid").map(mapDue),
-      receipts: items.filter(item => item.due_slip_id).map(mapDue),
+      // Only expose slips that belong to the payer's current outstanding items.
+      // Paid items are historical records and must not make a newly-created due
+      // look as though it already has the previous payment slip attached.
+      receipts: items
+        .filter(item => item.status !== "paid" && item.due_slip_id && Number(item.slip_uploaded_by_user_id) === Number(viewerUserId))
+        .map(mapDue),
       total: items
         .filter(item => item.status !== "paid")
         .reduce((sum, item) => sum + Number(item.amount || 0), 0),
@@ -2883,6 +2889,25 @@ function telegramMainMenu(context) {
   }
 }
 
+function telegramAddMenu(context) {
+  const botUsername = String(process.env.TELEGRAM_BOT_USERNAME || "").replace(/^@/, "").trim()
+  const miniAppShortName = String(process.env.TELEGRAM_WEBAPP_SHORT_NAME || "").trim()
+  const formButton = botUsername && miniAppShortName
+    ? {
+        text: "📝 เปิดแบบฟอร์มเพิ่มรายการ",
+        url: `https://t.me/${botUsername}/${miniAppShortName}?startapp=${encodeURIComponent(context.chatId)}`
+      }
+    : { text: "📝 เพิ่มรายการแบบตอบข้อความ", callback_data: "/batch_start" }
+  return {
+    inline_keyboard: [
+      [formButton],
+      [{ text: "⚡ เพิ่มด่วนด้วยข้อความ", callback_data: "/batch_start" }],
+      [{ text: "📚 ดูรูปแบบเพิ่มหลายรายการ", callback_data: "/batch_help" }],
+      [{ text: "↩️ กลับเมนูหลัก", callback_data: "/menu" }]
+    ]
+  }
+}
+
 function telegramReplyKeyboard() {
   return {
     keyboard: [
@@ -2953,8 +2978,10 @@ async function ensureTelegramCommands() {
       body: JSON.stringify({
         commands: [
           { command: "menu", description: "เปิดกล่องคำสั่ง Harbill" },
+          { command: "add", description: "เริ่มเพิ่มรายการและเลือกวิธีกรอก" },
           { command: "list", description: "ดูรายการเดือนนี้" },
           { command: "batch", description: "เพิ่มหลายรายการ" },
+          { command: "name", description: "ตั้งชื่อที่ใช้ในกลุ่ม" },
           { command: "connect", description: "เชื่อมบัญชี Harbill" },
           { command: "help", description: "ดูวิธีใช้งาน" }
         ],
@@ -3371,8 +3398,8 @@ app.post("/telegram/webhook", async (req, res) => {
       })
       reply = null
     } else if (command === "เพิ่มรายการ" || quickAction === "➕ เพิ่มรายการ") {
-      await sendTelegramMessage(context.chatId, telegramBatchHelpText(), {
-        reply_markup: telegramMainMenu(context)
+      await sendTelegramMessage(context.chatId, "เลือกวิธีเพิ่มรายการ", {
+        reply_markup: telegramAddMenu(context)
       })
       reply = null
     } else if (command === "รายการเดือนนี้" || quickAction === "📋 รายการเดือนนี้") {
@@ -3382,7 +3409,14 @@ app.post("/telegram/webhook", async (req, res) => {
     } else if (command === "/connect") {
       reply = await handleTelegramConnect(context, args[0])
     } else if (command === "/add" || command === "/เพิ่ม") {
-      reply = await handleTelegramAdd(context, body)
+      if (!body) {
+        await sendTelegramMessage(context.chatId, "เลือกวิธีเพิ่มรายการ", {
+          reply_markup: telegramAddMenu(context)
+        })
+        reply = null
+      } else {
+        reply = await handleTelegramAdd(context, body)
+      }
     } else if (command === "/batch" || command === "/ชุด" || command === "/หลายรายการ") {
       reply = await handleTelegramBatch(context, body)
     } else if (command === "/edit" || command === "/แก้") {
