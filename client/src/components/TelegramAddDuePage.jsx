@@ -10,7 +10,14 @@ function tg() {
 }
 
 function emptyItem() {
-  return { key: `${Date.now()}-${Math.random()}`, title: "", amount: "", debtors: [] }
+  return { key: `${Date.now()}-${Math.random()}`, title: "ค่าใช้จ่าย", customTitle: "", amount: "", debtors: [] }
+}
+
+const CUSTOM_ITEM = "__custom__"
+const ITEM_PRESETS = ["ค่าใช้จ่าย", "ค่าอาหาร", "ค่าน้ำ", "ค่าไฟ", "ค่าอินเทอร์เน็ต", "ค่าเช่า", "ค่าเดินทาง"]
+
+function itemTitle(item) {
+  return item.title === CUSTOM_ITEM ? item.customTitle.trim() : item.title.trim()
 }
 
 function formatMoney(value) {
@@ -102,6 +109,15 @@ export default function TelegramAddDuePage() {
     return [...byName.values()]
   }, [context])
 
+  // การหารทั้งกลุ่มเป็นกรณีที่ใช้บ่อยที่สุด: เตรียมไว้ให้ตั้งแต่เปิดหน้า
+  // ผู้ใช้ยังเปลี่ยนเป็นเลือกเฉพาะคนได้ในหนึ่งครั้งแตะด้านล่าง
+  useEffect(() => {
+    if (people.length === 0) return
+    setItems(value => value.map(item => (
+      item.debtors.length === 0 ? { ...item, debtors: people.map(person => person.name) } : item
+    )))
+  }, [people])
+
   function updateItem(key, changes) {
     setItems(value => value.map(item => item.key === key ? { ...item, ...changes } : item))
   }
@@ -116,6 +132,10 @@ export default function TelegramAddDuePage() {
     })
   }
 
+  function addItem() {
+    setItems(value => [...value, { ...emptyItem(), debtors: people.map(person => person.name) }])
+  }
+
   async function submit(event) {
     event.preventDefault()
     if (saving) return
@@ -128,7 +148,7 @@ export default function TelegramAddDuePage() {
         month,
         note,
         items: items.map(item => ({
-          title: item.title.trim(),
+          title: itemTitle(item),
           amount: Number(item.amount),
           debtors: item.debtors.map(name => {
             const person = people.find(value => value.name === name)
@@ -171,7 +191,7 @@ export default function TelegramAddDuePage() {
   }
 
   const canSubmit = context?.member?.hasPromptPay && month && items.length > 0 && items.every(item => (
-    item.title.trim() && Number(item.amount) > 0 && item.debtors.length > 0
+    itemTitle(item) && Number(item.amount) > 0 && item.debtors.length > 0
   ))
 
   return (
@@ -233,26 +253,62 @@ export default function TelegramAddDuePage() {
                     <button type="button" onClick={() => setItems(value => value.filter(row => row.key !== item.key))} className="text-xs font-bold text-rose-300">ลบ</button>
                   )}
                 </div>
-                <div className="mt-3 grid grid-cols-[1fr_110px] gap-2">
-                  <input
-                    value={item.title}
-                    onChange={event => updateItem(item.key, { title: event.target.value })}
-                    className="min-w-0 rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm outline-none focus:border-sky-400"
-                    placeholder="ชื่อรายการ"
-                  />
+                <p className="mt-3 text-xs font-bold text-slate-300">เลือกรายการ</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {ITEM_PRESETS.map(title => {
+                    const selected = item.title === title
+                    return (
+                      <button
+                        key={title}
+                        type="button"
+                        onClick={() => updateItem(item.key, { title })}
+                        className={`rounded-full border px-3 py-2 text-xs font-bold transition-colors ${selected ? "border-sky-300 bg-sky-400/20 text-sky-100" : "border-white/10 bg-slate-900 text-slate-300"}`}
+                      >
+                        {selected ? "✓ " : ""}{title}
+                      </button>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => updateItem(item.key, { title: CUSTOM_ITEM })}
+                    className={`rounded-full border px-3 py-2 text-xs font-bold transition-colors ${item.title === CUSTOM_ITEM ? "border-sky-300 bg-sky-400/20 text-sky-100" : "border-white/10 bg-slate-900 text-slate-300"}`}
+                  >
+                    {item.title === CUSTOM_ITEM ? "✓ " : ""}อื่น ๆ
+                  </button>
+                </div>
+                <div className="mt-3">
                   <input
                     type="number"
                     inputMode="decimal"
                     value={item.amount}
                     onChange={event => updateItem(item.key, { amount: event.target.value })}
-                    className="min-w-0 rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm outline-none focus:border-sky-400"
-                    placeholder="ยอดรวม"
+                    className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-3 text-base outline-none focus:border-sky-400"
+                    placeholder="กรอกราคา / ยอดรวม"
                   />
                 </div>
+                {item.title === CUSTOM_ITEM && (
+                  <input
+                    value={item.customTitle}
+                    onChange={event => updateItem(item.key, { customTitle: event.target.value })}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm outline-none focus:border-sky-400"
+                    placeholder="พิมพ์ชื่อรายการ"
+                    autoFocus
+                  />
+                )}
                 <p className="mt-2 text-[11px] font-semibold leading-5 text-slate-400">
                   ช่องจำนวนเงินคือ <span className="text-sky-200">ยอดรวมของรายการ</span> ระบบจะหารเท่ากันให้คนที่เลือก ไม่ใช่ยอดต่อคน
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-slate-300">ผู้ที่ต้องจ่าย</p>
+                  <button
+                    type="button"
+                    onClick={() => updateItem(item.key, { debtors: item.debtors.length === people.length ? [] : people.map(person => person.name) })}
+                    className="rounded-lg border border-sky-300/30 bg-sky-400/10 px-2.5 py-1 text-[11px] font-black text-sky-200"
+                  >
+                    {item.debtors.length === people.length ? "ล้างทั้งหมด" : "เลือกทุกคน"}
+                  </button>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
                   {people.map(person => {
                     const selected = item.debtors.includes(person.name)
                     return (
@@ -283,7 +339,7 @@ export default function TelegramAddDuePage() {
               </section>
             ))}
 
-            <button type="button" onClick={() => setItems(value => [...value, emptyItem()])} className="w-full rounded-xl border border-dashed border-sky-400/40 px-4 py-2.5 text-sm font-bold text-sky-200">＋ เพิ่มอีกรายการ</button>
+            <button type="button" onClick={addItem} className="w-full rounded-xl border border-dashed border-sky-400/40 px-4 py-2.5 text-sm font-bold text-sky-200">＋ เพิ่มอีกรายการ</button>
 
             <section className="grid grid-cols-2 gap-2">
               <label className="block">
